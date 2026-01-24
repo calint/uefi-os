@@ -2,3 +2,4 @@
 /esp/
 /kernel.o
 /main.o
+/gdt_asm.o
