@@ -13,6 +13,5 @@
       "/usr/include/efi/"
     ],
     "directory": "/home/c/w/uefi-os",
-    "output": "esp/EFI/BOOT/BOOTX64.EFI"
   }
 ]
