@@ -134,8 +134,9 @@ void outb(UINT16 port, UINT8 val) {
 }
 
 void print_serial(const char* s) {
-    while (*s)
+    while (*s) {
         outb(0x3F8, *s++);
+    }
 }
 
 void print_hex_serial(UINT64 val) {
