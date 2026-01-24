@@ -268,6 +268,40 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
         print_serial("Console Rendered Successfully.\r\n");
 
         print_memory_stats(SystemTable);
+
+        // Add this to your main.c includes and defines
+        typedef void (*KERNEL_ENTRY)(UINT32* fb, UINT32 stride);
+
+        // Inside efi_main, after your diagnostics:
+        print_serial("Attempting to exit Boot Services...\r\n");
+
+        UINTN map_size = 0;
+        EFI_MEMORY_DESCRIPTOR* map = NULL;
+        UINTN map_key;
+        UINTN descriptor_size;
+        UINT32 descriptor_version;
+
+        // 1. Get the map key right before exiting
+        bs->GetMemoryMap(&map_size, NULL, &map_key, &descriptor_size,
+                         &descriptor_version);
+        map_size += (2 * descriptor_size);
+        bs->AllocatePool(EfiLoaderData, map_size, (VOID**)&map);
+        bs->GetMemoryMap(&map_size, map, &map_key, &descriptor_size,
+                         &descriptor_version);
+
+        // 2. Exit Boot Services
+        status = bs->ExitBootServices(ImageHandle, map_key);
+
+        if (status == EFI_SUCCESS) {
+            // 3. We are now alone. Jump to kernel.
+            // In a real OS, we'd load this from a file, but for a 'baby step',
+            // we will link kernel_main directly into our executable.
+            extern void kernel_main(UINT32 * fb, UINT32 stride);
+            kernel_main((UINT32*)(UINTN)gop->Mode->FrameBufferBase,
+                        gop->Mode->Info->PixelsPerScanLine);
+        } else {
+            print_serial("Failed to exit Boot Services! Map key changed.\r\n");
+        }
     }
 
     while (1) {

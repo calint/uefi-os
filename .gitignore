@@ -1,2 +1,4 @@
 /.cache/
 /esp/
+/kernel.o
+/main.o
