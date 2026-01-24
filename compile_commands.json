@@ -10,10 +10,7 @@
       "-mno-red-zone",
       "-fno-stack-protector",
       "-I",
-      "/usr/include/efi/",
-      "-o",
-      "esp/EFI/BOOT/BOOTX64.EFI",
-      "src/main.c"
+      "/usr/include/efi/"
     ],
     "directory": "/home/c/w/uefi-os",
     "output": "esp/EFI/BOOT/BOOTX64.EFI"
