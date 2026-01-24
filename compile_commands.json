@@ -1,0 +1,21 @@
+[
+  {
+    "file": "src/main.c",
+    "arguments": [
+      "clang",
+      "-std=c23",
+      "-target",
+      "x86_64-unknown-windows-msvc",
+      "-ffreestanding",
+      "-mno-red-zone",
+      "-fno-stack-protector",
+      "-I",
+      "/usr/include/efi/",
+      "-o",
+      "esp/EFI/BOOT/BOOTX64.EFI",
+      "src/main.c"
+    ],
+    "directory": "/home/c/w/uefi-os",
+    "output": "esp/EFI/BOOT/BOOTX64.EFI"
+  }
+]
