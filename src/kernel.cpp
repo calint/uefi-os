@@ -195,7 +195,16 @@ extern "C" auto kernel_on_keyboard() -> void {
     *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
 }
 
-// assembler function that calls osca
+extern "C" auto osca_on_timer() -> void;
+
+extern "C" auto kernel_on_timer() -> void {
+    osca_on_timer();
+
+    // acknowledge interrupt
+    *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+}
+
+// assembler functions
 extern "C" auto kernel_apic_timer_handler() -> void;
 extern "C" auto kernel_keyboard_handler() -> void;
 
