@@ -1,15 +1,6 @@
 #include <efi.h>
 
-#include "ascii_font_8x8.hpp"
 #include "kernel.hpp"
-
-extern "C" void* memset(void* s, int c, unsigned long n) {
-    unsigned char* p = reinterpret_cast<unsigned char*>(s);
-    while (n--) {
-        *p++ = static_cast<unsigned char>(c);
-    }
-    return s;
-}
 
 alignas(16) static u8 kernel_stack[16384];
 
@@ -85,4 +76,12 @@ extern "C" auto kernel_init(MemoryMap map, FrameBuffer fb) -> void {
 
     serial_print("kernel_switch_stack\r\n");
     kernel_switch_stack(stack_top, osca);
+}
+
+extern "C" void* memset(void* s, int c, unsigned long n) {
+    unsigned char* p = reinterpret_cast<unsigned char*>(s);
+    while (n--) {
+        *p++ = static_cast<unsigned char>(c);
+    }
+    return s;
 }
