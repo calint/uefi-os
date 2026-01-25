@@ -3,11 +3,6 @@ set -e
 
 mkdir -p esp/EFI/BOOT
 
-#!/bin/bash
-set -e
-
-mkdir -p esp/EFI/BOOT
-
 clang++ -std=c++23 -target x86_64-unknown-windows-msvc \
     -ffreestanding -fno-stack-protector -fno-exceptions -fno-rtti \
     -mno-red-zone -c src/kernel.cpp -o kernel.o
