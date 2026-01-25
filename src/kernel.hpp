@@ -4,7 +4,7 @@ using u8 = unsigned char;
 using u16 = unsigned short;
 using u32 = unsigned int;
 using u64 = unsigned long long;
-using uintptr = unsigned long long;
+using uptr = unsigned long long;
 
 typedef struct FrameBuffer {
     u32* pixels;
@@ -15,14 +15,14 @@ typedef struct FrameBuffer {
 
 typedef struct MemoryMap {
     void* buffer;
-    uintptr size;
-    uintptr descriptor_size;
+    uptr size;
+    uptr descriptor_size;
     u32 descriptor_version;
 } MemoryMap;
 
 typedef struct Heap {
     void* start;
-    uintptr size;
+    uptr size;
 } Heap;
 
 extern FrameBuffer frame_buffer;
@@ -33,7 +33,7 @@ inline void outb(u16 port, u8 val) {
     __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-inline void serial_print(const char* s) {
+inline void serial_print(char const* s) {
     while (*s) {
         outb(0x3F8, *s++);
     }

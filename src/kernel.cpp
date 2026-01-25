@@ -43,8 +43,7 @@ GDT g_gdt{.null = {0, 0, 0, 0, 0, 0},
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
-extern "C" auto kernel_switch_stack(uintptr stack_top, void (*target)())
-    -> void;
+extern "C" auto kernel_switch_stack(uptr stack_top, void (*target)()) -> void;
 
 auto make_heap() -> Heap {
     Heap result{.start = nullptr, .size = 0};
@@ -52,15 +51,15 @@ auto make_heap() -> Heap {
     EFI_MEMORY_DESCRIPTOR* desc =
         reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
 
-    uintptr num_descriptors = memory_map.size / memory_map.descriptor_size;
+    uptr num_descriptors = memory_map.size / memory_map.descriptor_size;
 
-    for (uintptr i = 0; i < num_descriptors; ++i) {
+    for (uptr i = 0; i < num_descriptors; ++i) {
         EFI_MEMORY_DESCRIPTOR* d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            reinterpret_cast<uintptr>(desc) + (i * memory_map.descriptor_size));
+            reinterpret_cast<uptr>(desc) + (i * memory_map.descriptor_size));
 
         if (d->Type == EfiConventionalMemory) {
-            uintptr chunk_start = d->PhysicalStart;
-            uintptr chunk_size = d->NumberOfPages * 4096;
+            uptr chunk_start = d->PhysicalStart;
+            uptr chunk_size = d->NumberOfPages * 4096;
             if (chunk_size > result.size) {
                 result.start = reinterpret_cast<void*>(chunk_start);
                 result.size = chunk_size;
@@ -82,8 +81,8 @@ extern "C" auto kernel_init(MemoryMap map) -> void {
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
 
-    uintptr stack_top =
-        reinterpret_cast<uintptr>(kernel_stack) + sizeof(kernel_stack);
+    uptr stack_top =
+        reinterpret_cast<uptr>(kernel_stack) + sizeof(kernel_stack);
 
     serial_print("kernel_switch_stack\r\n");
     kernel_switch_stack(stack_top, osca);
