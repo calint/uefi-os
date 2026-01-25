@@ -1,32 +1,10 @@
 [
   {
-    "file": "src/kernel.cpp",
-    "directory": "/home/c/w/uefi-os",
-    "arguments": [
-      "clang++",
-      "-std=c++23",
-      "-ffreestanding",
-      "-fno-stack-protector",
-      "-fno-exceptions",
-      "-fno-rtti",
-      "-mno-red-zone",
-    ],
-  },
-  {
-    "file": "src/kernel_asm.s",
-    "directory": "/home/c/w/uefi-os",
-    "arguments": [
-      "clang",
-      "-target",
-      "x86_64-unknown-windows-msvc",
-    ],
-  },
-  {
     "file": "src/uefi.cpp",
     "directory": "/home/c/w/uefi-os",
     "arguments": [
       "clang++",
-      "-std=c++23",
+      "-std=c++26",
       "-target",
       "x86_64-unknown-windows-msvc",
       "-ffreestanding",
@@ -34,6 +12,30 @@
       "-mno-red-zone",
       "-I",
       "/usr/include/efi/",
-    ],
+    ]
+  },
+  {
+    "file": "src/kernel_asm.s",
+    "directory": "/home/c/w/uefi-os",
+    "arguments": [
+      "clang++",
+      "-std=c++26",
+      "-target",
+      "x86_64-unknown-windows-msvc",
+    ]
+  },
+  {
+    "file": "src/kernel.cpp",
+    "directory": "/home/c/w/uefi-os",
+    "arguments": [
+      "clang++",
+      "-std=c++26",
+      "-ffreestanding",
+      "-fno-stack-protector",
+      "-mno-red-zone",
+      "-fno-stack-protector",
+      "-fno-exceptions",
+      "-fno-rtti",
+    ]
   }
 ]

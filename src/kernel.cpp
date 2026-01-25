@@ -36,14 +36,15 @@ extern "C" auto kernel_init() -> void {
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
                            .offset = reinterpret_cast<u64>(&g_gdt)};
 
-    serial_print("load gdt\r\n");
+    serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
 
     uintptr stack_top =
         reinterpret_cast<uintptr>(kernel_stack) + sizeof(kernel_stack);
 
-    serial_print("switch_stack\r\n");
+    serial_print("kernel_switch_stack\r\n");
     auto kernel_main() -> void;
+    serial_print("kernel_main\r\n");
     kernel_switch_stack(stack_top, kernel_main);
 }
 
@@ -72,7 +73,7 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
 }
 
 auto kernel_main() -> void {
-    serial_print("kernel_main\r\n");
+    serial_print("osca x64 kernel is running\r\n");
     u32* di = frame_buffer.pixels;
     for (u32 i = 0; i < frame_buffer.stride * frame_buffer.height; ++i) {
         *di = 0x00000022;

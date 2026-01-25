@@ -37,7 +37,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     bs->AllocatePool(EfiLoaderData, size, (void**)&map);
     bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver);
 
-    serial_print("exit boot service\r\n");
+    serial_print("exit_boot_services\r\n");
 
     // exit boot services and jump to kernel if successful
     if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
