@@ -36,7 +36,7 @@ extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
 extern "C" auto kernel_switch_stack(u64 stack_top, void (*target)()) -> void;
 
-auto make_heap() -> Heap {
+static auto make_heap() -> Heap {
     Heap result{.start = nullptr, .size = 0};
 
     EFI_MEMORY_DESCRIPTOR* desc =
