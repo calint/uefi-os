@@ -1,5 +1,6 @@
 #include <efi.h>
 
+#include "efiprot.h"
 #include "kernel.hpp"
 
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)

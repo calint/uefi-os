@@ -1,0 +1,17 @@
+
+    serial_print("pixel format: ");
+    switch (gop->Mode->Info->PixelFormat) {
+    case PixelBlueGreenRedReserved8BitPerColor:
+        serial_print("bgr");
+        break;
+    case PixelRedGreenBlueReserved8BitPerColor:
+        serial_print("rgb");
+        break;
+    case PixelBitMask:
+        serial_print("bit mask");
+    case PixelBltOnly:
+        serial_print("blt only");
+    case PixelFormatMax:
+        serial_print("format max");
+    }
+    serial_print("\r\n");
