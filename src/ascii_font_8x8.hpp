@@ -1,3 +1,5 @@
+#pragma once
+
 #include "kernel.hpp"
 
 const u8 ASCII_FONT[128][8] = {
