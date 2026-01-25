@@ -25,8 +25,8 @@ typedef struct Heap {
     u64 size;
 } Heap;
 
-extern FrameBuffer frame_buffer;
 extern MemoryMap memory_map;
+extern FrameBuffer frame_buffer;
 extern Heap heap;
 
 inline void outb(u16 port, u8 val) {

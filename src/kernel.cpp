@@ -14,7 +14,7 @@ extern "C" void* memset(void* s, int c, unsigned long n) {
 alignas(16) u8 kernel_stack[16384];
 
 MemoryMap memory_map = {};
-
+FrameBuffer frame_buffer = {};
 Heap heap = {};
 
 struct [[gnu::packed]] GDTDescriptor {
@@ -70,9 +70,9 @@ auto make_heap() -> Heap {
     return result;
 }
 
-extern "C" auto kernel_init(MemoryMap map) -> void {
+extern "C" auto kernel_init(MemoryMap map, FrameBuffer fb) -> void {
     memory_map = map;
-
+    frame_buffer = fb;
     heap = make_heap();
 
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
