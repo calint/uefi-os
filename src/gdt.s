@@ -7,7 +7,7 @@ load_gdt:
     mov %AX, %DS
     mov %AX, %ES
     mov %AX, %SS
-    
+
     pushq $0x08              # code segment
     lea .reload_cs(%RIP), %RAX
     pushq %RAX

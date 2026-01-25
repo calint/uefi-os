@@ -1,17 +1,39 @@
 [
   {
-    "file": "src/main.c",
+    "file": "src/kernel.cpp",
+    "directory": "/home/c/w/uefi-os",
+    "arguments": [
+      "clang++",
+      "-std=c++23",
+      "-ffreestanding",
+      "-fno-stack-protector",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-mno-red-zone",
+    ],
+  },
+  {
+    "file": "src/gdt.s",
+    "directory": "/home/c/w/uefi-os",
     "arguments": [
       "clang",
-      "-std=c23",
+      "-target",
+      "x86_64-unknown-windows-msvc",
+    ],
+  },
+  {
+    "file": "src/uefi.cpp",
+    "directory": "/home/c/w/uefi-os",
+    "arguments": [
+      "clang++",
+      "-std=c++23",
       "-target",
       "x86_64-unknown-windows-msvc",
       "-ffreestanding",
-      "-mno-red-zone",
       "-fno-stack-protector",
+      "-mno-red-zone",
       "-I",
-      "/usr/include/efi/"
+      "/usr/include/efi/",
     ],
-    "directory": "/home/c/w/uefi-os",
   }
 ]
