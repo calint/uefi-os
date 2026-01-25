@@ -40,10 +40,28 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
     }
 }
 
-extern "C" auto osca_on_timer() -> void { serial_print("."); }
+static u32 tick;
+
+extern "C" auto osca_on_timer() -> void {
+    serial_print(".");
+
+    ++tick;
+    for (u32 y = 120; y < 136; ++y) {
+        for (u32 x = 120; x < 136; ++x) {
+            frame_buffer.pixels[y * frame_buffer.stride + x] = tick << 6;
+        }
+    }
+}
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     serial_print("kbd: 0x");
     serial_print_hex(scancode);
     serial_print("\r\n");
+
+    for (u32 y = 100; y < 116; ++y) {
+        for (u32 x = 100; x < 116; ++x) {
+            frame_buffer.pixels[y * frame_buffer.stride + x] = u32(scancode)
+                                                               << 12;
+        }
+    }
 }
