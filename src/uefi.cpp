@@ -5,13 +5,16 @@
 
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
+
     serial_print("efi_main\r\n");
+
+    auto bs = sys->BootServices;
 
     EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
 
-    if (sys->BootServices->LocateProtocol(
-            &guid, nullptr, reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
+    if (bs->LocateProtocol(&guid, nullptr, reinterpret_cast<void**>(&gop)) !=
+        EFI_SUCCESS) {
         serial_print("failed to get frame buffer\r\n");
         return EFI_ABORTED;
     }
@@ -22,23 +25,21 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     UINT32 d_ver = 0;
     EFI_MEMORY_DESCRIPTOR* map = nullptr;
 
-    sys->BootServices->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
+    bs->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
     size += 2 * d_size;
 
-    if (sys->BootServices->AllocatePool(EfiLoaderData, size,
-                                        reinterpret_cast<void**>(&map)) !=
+    if (bs->AllocatePool(EfiLoaderData, size, reinterpret_cast<void**>(&map)) !=
         EFI_SUCCESS) {
         serial_print("failed to allocate pool\r\n");
         return EFI_ABORTED;
     }
 
-    if (sys->BootServices->GetMemoryMap(&size, map, &key, &d_size, &d_ver) !=
-        EFI_SUCCESS) {
+    if (bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver) != EFI_SUCCESS) {
         serial_print("failed to get memory map\r\n");
         return EFI_ABORTED;
     }
 
-    if (sys->BootServices->ExitBootServices(img, key) != EFI_SUCCESS) {
+    if (bs->ExitBootServices(img, key) != EFI_SUCCESS) {
         serial_print("failed to exit boot service\r\n");
         return EFI_ABORTED;
     }
