@@ -37,6 +37,14 @@ extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
     -> void;
 
+extern "C" void* memset(void* s, int c, unsigned long n) {
+    unsigned char* p = reinterpret_cast<unsigned char*>(s);
+    while (n--) {
+        *p++ = static_cast<unsigned char>(c);
+    }
+    return s;
+}
+
 static auto make_heap() -> Heap {
     Heap result{};
 
@@ -61,6 +69,111 @@ static auto make_heap() -> Heap {
     return result;
 }
 
+static auto allocate_page() -> void* {
+    if (heap.size < 4096) {
+        serial_print("error: out of memory for paging\r\n");
+        return nullptr;
+    }
+    void* ptr = heap.start;
+    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
+    heap.size -= 4096;
+    memset(ptr, 0, 4096);
+    return ptr;
+}
+
+static auto get_next_table(u64& entry) -> u64* {
+    if (!(entry & 1)) {
+        void* next = allocate_page();
+        entry = reinterpret_cast<u64>(next) | 0x03; // present + writable
+    }
+    return reinterpret_cast<u64*>(entry & ~0xFFFULL);
+}
+
+static auto init_paging() -> void {
+    u64* pml4 = reinterpret_cast<u64*>(allocate_page());
+
+    // identity map 4GB using 2MB huge pages
+    for (u64 addr = 0; addr < 0x100000000; addr += 0x200000) {
+        u64 pml4_i = (addr >> 39) & 0x1FF;
+        u64 pdp_i = (addr >> 30) & 0x1FF;
+        u64 pd_i = (addr >> 21) & 0x1FF;
+
+        u64* pdp = get_next_table(pml4[pml4_i]);
+        u64* pd = get_next_table(pdp[pdp_i]);
+
+        pd[pd_i] = addr | 0x83; // present + writable + huge
+    }
+
+    // specific 4KB map for LAPIC to disable caching
+    u64 lapic_addr = 0xFEE00000;
+    u64* pdp = get_next_table(pml4[(lapic_addr >> 39) & 0x1FF]);
+    u64* pd = get_next_table(pdp[(lapic_addr >> 30) & 0x1FF]);
+
+    u64* pt = reinterpret_cast<u64*>(allocate_page());
+    pd[(lapic_addr >> 21) & 0x1FF] = reinterpret_cast<u64>(pt) | 0x03;
+    pt[(lapic_addr >> 12) & 0x1FF] =
+        lapic_addr | 0x1B; // present + writable + pwt + pcd
+
+    // load new cr3
+    asm volatile("mov %0, %%cr3" : : "r"(pml4) : "memory");
+}
+
+struct [[gnu::packed]] IDTEntry {
+    u16 low;
+    u16 sel;
+    u8 ist;
+    u8 attr;
+    u16 mid;
+    u32 high;
+    u32 res;
+};
+
+struct [[gnu::packed]] IDTR {
+    u16 limit;
+    u64 base;
+};
+
+alignas(16) static IDTEntry idt[256];
+
+auto calibrate_apic(u32 hz) -> u32 {
+    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+
+    // tell PIT to wait ~10ms
+    // frequency is 1193182 hz. 10ms = 11931 ticks
+    outb(0x43, 0x30); // channel 0, lo/hi, mode 0
+    outb(0x40, 0x2B); // lo byte of 11931
+    outb(0x40, 0x2E); // hi byte of 11931
+
+    // start lapic timer
+    lapic[0x380 / 4] = 0xFFFFFFFF; // max count
+
+    // wait for pit to finish
+    u8 status = 0;
+    while (!(status & 0x80)) {
+        outb(0x43, 0xE2); // read back command
+        __asm__ volatile("inb %1, %0" : "=a"(status) : "Nd"(u16(0x40)));
+    }
+
+    u32 ticks_per_10ms = 0xFFFFFFFF - lapic[0x390 / 4]; // current count reg
+
+    return ticks_per_10ms * 100 / hz;
+}
+
+static auto init_apic_timer() -> void {
+    // mask legacy pic
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+
+    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+    lapic[0x0F0 / 4] = 0x1FF;             // software enable + spurious vector
+    lapic[0x3E0 / 4] = 0x03;              // divide by 16
+    lapic[0x320 / 4] = (1 << 17) | 32;    // periodic mode + vector 32
+    lapic[0x380 / 4] = calibrate_apic(2); // initial count
+}
+
+// assembler function that calls osca
+extern "C" auto kernel_apic_timer_handler() -> void;
+
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     -> void {
 
@@ -74,16 +187,22 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
 
-    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
+    serial_print("init_paging\r\n");
+    init_paging();
 
+    // set idt entry 32
+    u64 addr = u64(kernel_apic_timer_handler);
+    idt[32] = {u16(addr), 0x08, 0, 0x8E, u16(addr >> 16), u32(addr >> 32), 0};
+
+    serial_print("idt_entry (timer)\r\n");
+    IDTR idtr = {sizeof(idt) - 1, reinterpret_cast<u64>(idt)};
+    asm volatile("lidt %0" : : "m"(idtr));
+
+    serial_print("init_apic_timer\r\n");
+    init_apic_timer();
+    asm volatile("sti");
+
+    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
     serial_print("osca_start\r\n");
     osca_start(stack_top, osca);
-}
-
-extern "C" void* memset(void* s, int c, unsigned long n) {
-    unsigned char* p = reinterpret_cast<unsigned char*>(s);
-    while (n--) {
-        *p++ = static_cast<unsigned char>(c);
-    }
-    return s;
 }

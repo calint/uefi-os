@@ -39,3 +39,10 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
         __asm__("hlt");
     }
 }
+
+extern "C" auto osca_apic_timer_handler() -> void {
+    serial_print(".");
+
+    // acknowledge interrupt
+    *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+}
