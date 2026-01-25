@@ -1,6 +1,6 @@
 #include "kernel.hpp"
 
-const uint8_t ASCII_FONT[128][8] = {
+const u8 ASCII_FONT[128][8] = {
     {0},
     {0},
     {0},
