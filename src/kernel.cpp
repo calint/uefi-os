@@ -28,9 +28,9 @@ struct [[gnu::packed]] GDT {
     GDTEntry data;
 };
 
-static GDT g_gdt{.null = {0, 0, 0, 0, 0, 0},
-                 .code = {0, 0, 0, 0x9A, 0x20, 0},
-                 .data = {0, 0, 0, 0x92, 0x00, 0}};
+static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
+               .code = {0, 0, 0, 0x9A, 0x20, 0},
+               .data = {0, 0, 0, 0x92, 0x00, 0}};
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
@@ -67,7 +67,7 @@ extern "C" auto kernel_init(FrameBuffer fb, MemoryMap map) -> void {
     heap = make_heap();
 
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
-                           .offset = reinterpret_cast<u64>(&g_gdt)};
+                           .offset = reinterpret_cast<u64>(&gdt)};
 
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
