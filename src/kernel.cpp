@@ -38,16 +38,15 @@ extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
     -> void;
 
 static auto make_heap() -> Heap {
-    Heap result{.start = nullptr, .size = 0};
+    Heap result{};
 
-    EFI_MEMORY_DESCRIPTOR* desc =
-        reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
 
     u64 num_descriptors = memory_map.size / memory_map.descriptor_size;
 
     for (u64 i = 0; i < num_descriptors; ++i) {
-        EFI_MEMORY_DESCRIPTOR* d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            reinterpret_cast<u64>(desc) + (i * memory_map.descriptor_size));
+        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            u64(desc) + (i * memory_map.descriptor_size));
 
         if (d->Type == EfiConventionalMemory) {
             u64 chunk_start = d->PhysicalStart;
@@ -64,6 +63,7 @@ static auto make_heap() -> Heap {
 
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     -> void {
+
     frame_buffer = fb;
     memory_map = map;
     heap = make_heap();
@@ -74,7 +74,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
 
-    u64 stack_top = reinterpret_cast<u64>(kernel_stack) + sizeof(kernel_stack);
+    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
 
     serial_print("osca_start\r\n");
     osca_start(stack_top, osca);
