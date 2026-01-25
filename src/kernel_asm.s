@@ -1,7 +1,7 @@
-.global load_gdt
-.global switch_stack
+.global kernel_load_gdt
+.global kernel_switch_stack
 
-load_gdt:
+kernel_load_gdt:
     lgdt (%RCX)              # rcx has descriptor address
     mov $0x10, %AX           # data segment
     mov %AX, %DS
@@ -15,7 +15,7 @@ load_gdt:
 .reload_cs:
     ret
 
-switch_stack:
+kernel_switch_stack:
     # RCX = new stack top
     # RDX = address of function to jump to
     mov %RCX, %RSP

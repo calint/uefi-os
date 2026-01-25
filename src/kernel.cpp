@@ -27,23 +27,24 @@ GDT g_gdt{.null = {0, 0, 0, 0, 0, 0},
           .code = {0, 0, 0, 0x9A, 0x20, 0},
           .data = {0, 0, 0, 0x92, 0x00, 0}};
 
-extern "C" auto load_gdt(GDTDescriptor* descriptor) -> void;
+extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
-extern "C" auto switch_stack(uintptr stack_top, void (*target)()) -> void;
+extern "C" auto kernel_switch_stack(uintptr stack_top, void (*target)())
+    -> void;
 
 extern "C" auto kernel_init() -> void {
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
                            .offset = reinterpret_cast<u64>(&g_gdt)};
 
     serial_print("load gdt\r\n");
-    load_gdt(&gdt_desc);
+    kernel_load_gdt(&gdt_desc);
 
     uintptr stack_top =
         reinterpret_cast<uintptr>(kernel_stack) + sizeof(kernel_stack);
 
     serial_print("switch_stack\r\n");
     auto kernel_main() -> void;
-    switch_stack(stack_top, kernel_main);
+    kernel_switch_stack(stack_top, kernel_main);
 }
 
 void draw_char(u32 x, u32 y, u32 color, char c) {
