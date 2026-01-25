@@ -4,7 +4,7 @@ using u8 = unsigned char;
 using u16 = unsigned short;
 using u32 = unsigned int;
 using u64 = unsigned long long;
-using uptr = unsigned long long;
+// using uptr = u64;
 
 typedef struct FrameBuffer {
     u32* pixels;
@@ -15,14 +15,14 @@ typedef struct FrameBuffer {
 
 typedef struct MemoryMap {
     void* buffer;
-    uptr size;
-    uptr descriptor_size;
+    u64 size;
+    u64 descriptor_size;
     u32 descriptor_version;
 } MemoryMap;
 
 typedef struct Heap {
     void* start;
-    uptr size;
+    u64 size;
 } Heap;
 
 extern FrameBuffer frame_buffer;
