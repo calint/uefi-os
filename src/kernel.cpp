@@ -84,7 +84,7 @@ static auto allocate_page() -> void* {
 static auto get_next_table(u64& entry) -> u64* {
     if (!(entry & 1)) {
         void* next = allocate_page();
-        entry = reinterpret_cast<u64>(next) | 0x03; // present + writable
+        entry = u64(next) | 0x03; // present + writable
     }
     return reinterpret_cast<u64*>(entry & ~0xFFFULL);
 }
