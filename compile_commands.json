@@ -13,7 +13,7 @@
     ],
   },
   {
-    "file": "src/gdt.s",
+    "file": "src/kernel_asm.s",
     "directory": "/home/c/w/uefi-os",
     "arguments": [
       "clang",

@@ -1,5 +1,5 @@
 /.cache/
 /esp/
+/uefi.o
 /kernel.o
-/main.o
-/gdt_asm.o
+/kernel_asm.o
