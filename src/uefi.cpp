@@ -9,8 +9,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
 
-    if (sys->BootServices->LocateProtocol(&guid, nullptr, (void**)&gop) !=
-        EFI_SUCCESS) {
+    if (sys->BootServices->LocateProtocol(
+            &guid, nullptr, reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
         serial_print("failed to get frame buffer\r\n");
         return EFI_ABORTED;
     }
@@ -23,7 +23,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     sys->BootServices->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
     size += 2 * d_size;
-    if (sys->BootServices->AllocatePool(EfiLoaderData, size, (void**)&map) !=
+    if (sys->BootServices->AllocatePool(EfiLoaderData, size,
+                                        reinterpret_cast<void**>(&map)) !=
         EFI_SUCCESS) {
         serial_print("failed to allocate pool\r\n");
         return EFI_ABORTED;
@@ -41,11 +42,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     auto kernel_init(MemoryMap, FrameBuffer)->void;
 
-    kernel_init({.buffer = (void*)map,
+    kernel_init({.buffer = reinterpret_cast<void*>(map),
                  .size = size,
                  .descriptor_size = d_size,
                  .descriptor_version = d_ver},
-                {.pixels = (UINT32*)(UINTN)gop->Mode->FrameBufferBase,
+                {.pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
                  .width = gop->Mode->Info->HorizontalResolution,
                  .height = gop->Mode->Info->VerticalResolution,
                  .stride = gop->Mode->Info->PixelsPerScanLine});

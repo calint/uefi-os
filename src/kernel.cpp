@@ -4,14 +4,14 @@
 #include "kernel.hpp"
 
 extern "C" void* memset(void* s, int c, unsigned long n) {
-    unsigned char* p = (unsigned char*)s;
+    unsigned char* p = reinterpret_cast<unsigned char*>(s);
     while (n--) {
-        *p++ = (unsigned char)c;
+        *p++ = static_cast<unsigned char>(c);
     }
     return s;
 }
 
-alignas(16) u8 kernel_stack[16384];
+alignas(16) static u8 kernel_stack[16384];
 
 MemoryMap memory_map = {};
 FrameBuffer frame_buffer = {};
@@ -37,9 +37,9 @@ struct [[gnu::packed]] GDT {
     GDTEntry data;
 };
 
-GDT g_gdt{.null = {0, 0, 0, 0, 0, 0},
-          .code = {0, 0, 0, 0x9A, 0x20, 0},
-          .data = {0, 0, 0, 0x92, 0x00, 0}};
+static GDT g_gdt{.null = {0, 0, 0, 0, 0, 0},
+                 .code = {0, 0, 0, 0x9A, 0x20, 0},
+                 .data = {0, 0, 0, 0x92, 0x00, 0}};
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 

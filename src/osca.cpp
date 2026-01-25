@@ -7,9 +7,9 @@ void draw_char(u32 x, u32 y, u32 color, char c) {
     if (c < 32 || c > 126) {
         c = '?'; // fallback
     }
-    u8 const* glyph = ASCII_FONT[(u8)c];
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < 8; ++j) {
+    u8 const* glyph = ASCII_FONT[u8(c)];
+    for (u8 i = 0; i < 8; ++i) {
+        for (u8 j = 0; j < 8; ++j) {
             if (glyph[i] & (1 << (7 - j))) {
                 fb[(y + i) * stride + (x + j)] = color;
             }
@@ -18,9 +18,7 @@ void draw_char(u32 x, u32 y, u32 color, char c) {
 }
 
 void print_string(u32 x, u32 y, u32 color, char const* str) {
-    u32* fb = frame_buffer.pixels;
-    u32 stride = frame_buffer.stride;
-    for (int i = 0; str[i] != '\0'; ++i) {
+    for (u32 i = 0; str[i] != '\0'; ++i) {
         draw_char(x + (i * 8), y, color, str[i]);
     }
 }
