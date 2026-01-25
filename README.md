@@ -4,3 +4,6 @@
 
 * experiment with uefi bootable image
 * render graphics on screen
+* keyboard
+* timer
+* tasks
