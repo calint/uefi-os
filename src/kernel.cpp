@@ -61,9 +61,9 @@ auto make_heap() -> Heap {
     return result;
 }
 
-extern "C" auto kernel_init(MemoryMap map, FrameBuffer fb) -> void {
-    memory_map = map;
+extern "C" auto kernel_init(FrameBuffer fb, MemoryMap map) -> void {
     frame_buffer = fb;
+    memory_map = map;
     heap = make_heap();
 
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,

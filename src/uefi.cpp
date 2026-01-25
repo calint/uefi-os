@@ -41,16 +41,16 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
-    auto kernel_init(MemoryMap, FrameBuffer)->void;
+    auto kernel_init(FrameBuffer, MemoryMap)->void;
 
-    kernel_init({.buffer = reinterpret_cast<void*>(map),
-                 .size = size,
-                 .descriptor_size = d_size,
-                 .descriptor_version = d_ver},
-                {.pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
+    kernel_init({.pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
                  .width = gop->Mode->Info->HorizontalResolution,
                  .height = gop->Mode->Info->VerticalResolution,
-                 .stride = gop->Mode->Info->PixelsPerScanLine});
+                 .stride = gop->Mode->Info->PixelsPerScanLine},
+                {.buffer = reinterpret_cast<void*>(map),
+                 .size = size,
+                 .descriptor_size = d_size,
+                 .descriptor_version = d_ver});
 
     return EFI_SUCCESS;
 }
