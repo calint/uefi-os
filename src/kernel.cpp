@@ -4,9 +4,9 @@
 
 alignas(16) static u8 kernel_stack[16384];
 
-MemoryMap memory_map = {};
-FrameBuffer frame_buffer = {};
-Heap heap = {};
+FrameBuffer frame_buffer;
+MemoryMap memory_map;
+Heap heap;
 
 struct [[gnu::packed]] GDTDescriptor {
     u16 size;
