@@ -42,7 +42,7 @@ kernel_apic_timer_handler:
     # stack alignment check: (5 hardware + 9 manual) = 14 qwords
     # 14 * 8 = 112 bytes. 112 is not a multiple of 16.
     sub $8, %RSP             # align stack to 16 bytes
-    call osca_apic_timer_handler
+    call osca_on_timer
     add $8, %RSP             # restore alignment
 
     pop %R11
@@ -72,7 +72,7 @@ kernel_keyboard_handler:
     # stack alignment check: (5 hardware + 9 manual) = 14 qwords
     # 14 * 8 = 112 bytes. 112 is not a multiple of 16.
     sub $8, %RSP             # align stack to 16 bytes
-    call osca_keyboard_handler
+    call kernel_on_keyboard
     add $8, %RSP             # restore alignment
 
     pop %R11

@@ -40,9 +40,15 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
     }
 }
 
-extern "C" auto osca_apic_timer_handler() -> void {
+extern "C" auto osca_on_timer() -> void {
     serial_print(".");
 
     // acknowledge interrupt
     *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+}
+
+extern "C" auto osca_on_keyboard(u8 scancode) -> void {
+    serial_print("kbd: 0x");
+    serial_print_hex(scancode);
+    serial_print("\r\n");
 }
