@@ -171,8 +171,58 @@ static auto init_apic_timer() -> void {
     lapic[0x380 / 4] = calibrate_apic(2); // initial count
 }
 
+auto io_apic_write(u32 reg, u32 val) -> void {
+    volatile u32* io_apic = reinterpret_cast<u32*>(0xFEC00000);
+    io_apic[0] = reg; // select register
+    io_apic[4] = val; // write value
+}
+
+auto force_apic_mode() -> void {
+    // some systems require this sequence to bypass the legacy PIC
+    outb(0x22, 0x70); // select IMCR register
+    outb(0x23, 0x01); // force all interrupts to go to APIC
+}
+
+auto init_keyboard() -> void {
+    // 1. drain any leftover data so the line can go high
+    while (u8(inb(0x64)) & 0x1) {
+        inb(0x60);
+    }
+
+    // 2. enable scanning and interrupts on the controller
+    outb(0x64, 0x60); // command: write configuration byte
+    while (u8(inb(0x64)) & 0x2)
+        ;             // wait for controller
+    outb(0x60, 0x01); // bit 0 = enable interrupt 1, bit 1 = enable interrupt 2
+
+    // 3. route via I/O APIC (IRQ 1 -> Vector 33)
+    io_apic_write(0x14, 0x21);
+    io_apic_write(0x15, 0);
+}
+
+auto init_io_apic() -> void {
+    // keyboard is usually irq 1, which is redirection entry 1 (regs 0x12 and
+    // 0x13) we want vector 33 (0x21), physical destination, fixed delivery
+    // 0x12: bits 0-7 = vector
+    io_apic_write(0x12, 33);
+    // 0x13: bits 24-27 = destination apic id (usually 0)
+    io_apic_write(0x13, 0);
+}
+
+extern "C" auto osca_keyboard_handler() -> void {
+    u8 scancode = inb(0x60);
+
+    serial_print("kbd: 0x");
+    serial_print_hex(scancode);
+    serial_print("\r\n");
+
+    // send eoi to local apic
+    *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+}
+
 // assembler function that calls osca
 extern "C" auto kernel_apic_timer_handler() -> void;
+extern "C" auto kernel_keyboard_handler() -> void;
 
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     -> void {
@@ -191,15 +241,26 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     init_paging();
 
     // set idt entry 32
-    u64 addr = u64(kernel_apic_timer_handler);
-    idt[32] = {u16(addr), 0x08, 0, 0x8E, u16(addr >> 16), u32(addr >> 32), 0};
+    u64 apic_addr = u64(kernel_apic_timer_handler);
+    idt[32] = {u16(apic_addr),       0x08, 0, 0x8E, u16(apic_addr >> 16),
+               u32(apic_addr >> 32), 0};
+    u64 kbd_addr = u64(kernel_keyboard_handler);
+    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8E, u16(kbd_addr >> 16),
+               u32(kbd_addr >> 32), 0};
 
-    serial_print("idt_entry (timer)\r\n");
+    serial_print("idt_entry (timer, keyboard)\r\n");
     IDTR idtr = {sizeof(idt) - 1, reinterpret_cast<u64>(idt)};
     asm volatile("lidt %0" : : "m"(idtr));
 
     serial_print("init_apic_timer\r\n");
     init_apic_timer();
+
+    serial_print("init_keyboard\r\n");
+    init_keyboard();
+
+    serial_print("init_io_apic\r\n");
+    init_io_apic();
+
     asm volatile("sti");
 
     u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);

@@ -51,4 +51,4 @@ clang -target x86_64-unknown-windows-msvc \
 
 qemu-system-x86_64 -m 1G -vga std -serial stdio \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
-    -drive format=raw,file=fat:rw:esp -full-screen
+    -drive format=raw,file=fat:rw:esp # -full-screen

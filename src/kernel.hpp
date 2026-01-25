@@ -36,6 +36,12 @@ inline void outb(u16 port, u8 val) {
     __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
+inline auto inb(u16 port) -> u8 {
+    u8 result;
+    __asm__ volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
+}
+
 inline void serial_print(char const* s) {
     while (*s) {
         outb(0x3F8, u8(*s++));
