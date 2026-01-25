@@ -76,7 +76,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     u64 stack_top = reinterpret_cast<u64>(kernel_stack) + sizeof(kernel_stack);
 
-    serial_print("kernel_switch_stack\r\n");
+    serial_print("osca_start\r\n");
     osca_start(stack_top, osca);
 }
 
