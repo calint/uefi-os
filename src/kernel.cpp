@@ -177,19 +177,11 @@ static auto io_apic_write(u32 reg, u32 val) -> void {
     io_apic[4] = val; // write value
 }
 
-static auto init_keyboard() -> void {
-    // route via I/O APIC (IRQ 1 -> Vector 33)
-    io_apic_write(0x14, 0x21);
-    io_apic_write(0x15, 0);
-}
-
 static auto init_io_apic() -> void {
-    // keyboard is usually irq 1, which is redirection entry 1 (regs 0x12 and
-    // 0x13) we want vector 33 (0x21), physical destination, fixed delivery
-    // 0x12: bits 0-7 = vector
-    io_apic_write(0x12, 33);
-    // 0x13: bits 24-27 = destination apic id (usually 0)
-    io_apic_write(0x13, 0);
+    // keyboard is usually irq 1
+    io_apic_write(0x10 + 1 * 2, 33);
+    // destination apic id (usually cpu 0)
+    io_apic_write(0x10 + 1 * 2 + 1, 0);
 }
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
@@ -237,9 +229,6 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     serial_print("init_apic_timer\r\n");
     init_apic_timer();
-
-    serial_print("init_keyboard\r\n");
-    init_keyboard();
 
     serial_print("init_io_apic\r\n");
     init_io_apic();
