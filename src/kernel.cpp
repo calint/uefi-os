@@ -1,7 +1,21 @@
-#include "kernel.hpp"
+#include <efi.h>
+
 #include "ascii_font_8x8.hpp"
+#include "kernel.hpp"
+
+extern "C" void* memset(void* s, int c, unsigned long n) {
+    unsigned char* p = (unsigned char*)s;
+    while (n--) {
+        *p++ = (unsigned char)c;
+    }
+    return s;
+}
 
 alignas(16) u8 kernel_stack[16384];
+
+MemoryMap memory_map = {};
+
+Heap heap = {};
 
 struct [[gnu::packed]] GDTDescriptor {
     u16 size;
@@ -32,7 +46,36 @@ extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 extern "C" auto kernel_switch_stack(uintptr stack_top, void (*target)())
     -> void;
 
-extern "C" auto kernel_init() -> void {
+auto make_heap() -> Heap {
+    Heap result{.start = nullptr, .size = 0};
+
+    EFI_MEMORY_DESCRIPTOR* desc =
+        reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+
+    uintptr num_descriptors = memory_map.size / memory_map.descriptor_size;
+
+    for (uintptr i = 0; i < num_descriptors; ++i) {
+        EFI_MEMORY_DESCRIPTOR* d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            reinterpret_cast<uintptr>(desc) + (i * memory_map.descriptor_size));
+
+        if (d->Type == EfiConventionalMemory) {
+            uintptr chunk_start = d->PhysicalStart;
+            uintptr chunk_size = d->NumberOfPages * 4096;
+            if (chunk_size > result.size) {
+                result.start = reinterpret_cast<void*>(chunk_start);
+                result.size = chunk_size;
+            }
+        }
+    }
+
+    return result;
+}
+
+extern "C" auto kernel_init(MemoryMap map) -> void {
+    memory_map = map;
+
+    heap = make_heap();
+
     GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
                            .offset = reinterpret_cast<u64>(&g_gdt)};
 
@@ -43,44 +86,5 @@ extern "C" auto kernel_init() -> void {
         reinterpret_cast<uintptr>(kernel_stack) + sizeof(kernel_stack);
 
     serial_print("kernel_switch_stack\r\n");
-    auto kernel_main() -> void;
-    serial_print("kernel_main\r\n");
-    kernel_switch_stack(stack_top, kernel_main);
-}
-
-void draw_char(u32 x, u32 y, u32 color, char c) {
-    u32* fb = frame_buffer.pixels;
-    u32 const stride = frame_buffer.stride;
-    if (c < 32 || c > 126) {
-        c = '?'; // fallback
-    }
-    u8 const* glyph = ASCII_FONT[(u8)c];
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < 8; ++j) {
-            if (glyph[i] & (1 << (7 - j))) {
-                fb[(y + i) * stride + (x + j)] = color;
-            }
-        }
-    }
-}
-
-void print_string(u32 x, u32 y, u32 color, char const* str) {
-    u32* fb = frame_buffer.pixels;
-    u32 stride = frame_buffer.stride;
-    for (int i = 0; str[i] != '\0'; ++i) {
-        draw_char(x + (i * 8), y, color, str[i]);
-    }
-}
-
-auto kernel_main() -> void {
-    serial_print("osca x64 kernel is running\r\n");
-    u32* di = frame_buffer.pixels;
-    for (u32 i = 0; i < frame_buffer.stride * frame_buffer.height; ++i) {
-        *di = 0x00000022;
-        ++di;
-    }
-    print_string(20, 20, 0x00FFFF00, "OSCA x64");
-    while (true) {
-        __asm__("hlt");
-    }
+    kernel_switch_stack(stack_top, osca);
 }

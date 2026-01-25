@@ -41,8 +41,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // exit boot services and jump to kernel if successful
     if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
-        extern auto kernel_init() -> void;
-        kernel_init();
+        extern auto kernel_init(MemoryMap map) -> void;
+        kernel_init({.buffer = (void*)map,
+                     .size = size,
+                     .descriptor_size = d_size,
+                     .descriptor_version = d_ver});
     }
 
     serial_print("failed to exit boot service\r\n");

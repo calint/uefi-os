@@ -13,7 +13,21 @@ typedef struct FrameBuffer {
     u32 stride;
 } FrameBuffer;
 
+typedef struct MemoryMap {
+    void* buffer;
+    uintptr size;
+    uintptr descriptor_size;
+    u32 descriptor_version;
+} MemoryMap;
+
+typedef struct Heap {
+    void* start;
+    uintptr size;
+} Heap;
+
 extern FrameBuffer frame_buffer;
+extern MemoryMap memory_map;
+extern Heap heap;
 
 inline void outb(u16 port, u8 val) {
     __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -31,3 +45,5 @@ inline void serial_print_hex(u64 val) {
         outb(0x3F8, hex_chars[(val >> i) & 0xF]);
     }
 }
+
+[[noreturn]] auto osca() -> void;

@@ -10,6 +10,7 @@
       "-ffreestanding",
       "-fno-stack-protector",
       "-mno-red-zone",
+      "-fno-builtin",
       "-I",
       "/usr/include/efi/",
     ]
@@ -36,6 +37,24 @@
       "-fno-stack-protector",
       "-fno-exceptions",
       "-fno-rtti",
+      "-fno-builtin",
+      "-I",
+      "/usr/include/efi/",
+    ]
+  },
+  {
+    "file": "src/osca.cpp",
+    "directory": "/home/c/w/uefi-os",
+    "arguments": [
+      "clang++",
+      "-std=c++26",
+      "-ffreestanding",
+      "-fno-stack-protector",
+      "-mno-red-zone",
+      "-fno-stack-protector",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-fno-builtin",
     ]
   }
 ]

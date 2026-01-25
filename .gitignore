@@ -1,5 +1,6 @@
 /.cache/
 /esp/
 /uefi.o
-/kernel.o
 /kernel_asm.o
+/kernel.o
+/osca.o
