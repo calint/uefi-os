@@ -34,7 +34,8 @@ static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
-extern "C" auto kernel_switch_stack(u64 stack_top, void (*target)()) -> void;
+extern "C" [[noreturn]] auto kernel_switch_stack(u64 stack_top,
+                                                 void (*target)()) -> void;
 
 static auto make_heap() -> Heap {
     Heap result{.start = nullptr, .size = 0};
@@ -61,7 +62,8 @@ static auto make_heap() -> Heap {
     return result;
 }
 
-extern "C" auto kernel_init(FrameBuffer fb, MemoryMap map) -> void {
+extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
+    -> void {
     frame_buffer = fb;
     memory_map = map;
     heap = make_heap();

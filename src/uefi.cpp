@@ -24,12 +24,14 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     sys->BootServices->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
     size += 2 * d_size;
+
     if (sys->BootServices->AllocatePool(EfiLoaderData, size,
                                         reinterpret_cast<void**>(&map)) !=
         EFI_SUCCESS) {
         serial_print("failed to allocate pool\r\n");
         return EFI_ABORTED;
     }
+
     if (sys->BootServices->GetMemoryMap(&size, map, &key, &d_size, &d_ver) !=
         EFI_SUCCESS) {
         serial_print("failed to get memory map\r\n");
@@ -40,8 +42,6 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         serial_print("failed to exit boot service\r\n");
         return EFI_ABORTED;
     }
-
-    auto kernel_init(FrameBuffer, MemoryMap)->void;
 
     kernel_init({.pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
                  .width = gop->Mode->Info->HorizontalResolution,

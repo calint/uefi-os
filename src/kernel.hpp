@@ -46,4 +46,6 @@ inline void serial_print_hex(u64 val) {
     }
 }
 
+extern "C" [[noreturn]] auto kernel_init(FrameBuffer, MemoryMap) -> void;
+
 [[noreturn]] auto osca() -> void;
