@@ -4,46 +4,47 @@
 
 FrameBuffer frame_buffer;
 
-extern "C" EFI_STATUS EFIAPI efi_main(EFI_HANDLE ImageHandle,
-                                      EFI_SYSTEM_TABLE* SystemTable) {
+extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
+    -> EFI_STATUS {
     serial_print("efi_main\r\n");
 
-    EFI_BOOT_SERVICES* bs = SystemTable->BootServices;
-    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = NULL;
-    EFI_GUID gop_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    auto* bs{sys->BootServices};
+    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
+    EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
 
-    serial_print("get frame buffer\r\n");
-    EFI_STATUS status = bs->LocateProtocol(&gop_guid, NULL, (VOID**)&gop);
-
-    if (status == EFI_SUCCESS && gop != NULL) {
-        frame_buffer.pixels = (UINT32*)(UINTN)gop->Mode->FrameBufferBase;
-        frame_buffer.stride = gop->Mode->Info->PixelsPerScanLine;
-        frame_buffer.height = gop->Mode->Info->VerticalResolution;
-        frame_buffer.width = gop->Mode->Info->HorizontalResolution;
-
-        UINTN map_size = 0;
-        EFI_MEMORY_DESCRIPTOR* map = NULL;
-        UINTN map_key;
-        UINTN descriptor_size;
-        UINT32 descriptor_version;
-
-        bs->GetMemoryMap(&map_size, NULL, &map_key, &descriptor_size,
-                         &descriptor_version);
-        map_size += (2 * descriptor_size);
-        bs->AllocatePool(EfiLoaderData, map_size, (VOID**)&map);
-        bs->GetMemoryMap(&map_size, map, &map_key, &descriptor_size,
-                         &descriptor_version);
-
-        serial_print("exit boot service\r\n");
-        status = bs->ExitBootServices(ImageHandle, map_key);
-
-        if (status == EFI_SUCCESS) {
-            extern void kernel_init();
-            kernel_init();
-        } else {
-            serial_print("failed to exit boot service\r\n");
-        }
+    // locate gop or fail immediately
+    if (bs->LocateProtocol(&guid, nullptr, (void**)&gop) != EFI_SUCCESS) {
+        serial_print("failed to get frame buffer\r\n");
+        return EFI_ABORTED;
     }
 
-    return EFI_SUCCESS;
+    // initialize global framebuffer using designated initializers
+    frame_buffer = {.pixels = (UINT32*)(UINTN)gop->Mode->FrameBufferBase,
+                    .width = gop->Mode->Info->HorizontalResolution,
+                    .height = gop->Mode->Info->VerticalResolution,
+                    .stride = gop->Mode->Info->PixelsPerScanLine};
+
+    // prepare memory map variables
+    UINTN size = 0;
+    UINTN key = 0;
+    UINTN d_size = 0;
+    UINT32 d_ver = 0;
+    EFI_MEMORY_DESCRIPTOR* map = nullptr;
+
+    // get map size, allocate, and fetch actual map
+    bs->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
+    size += 2 * d_size;
+    bs->AllocatePool(EfiLoaderData, size, (void**)&map);
+    bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver);
+
+    serial_print("exit boot service\r\n");
+
+    // exit boot services and jump to kernel if successful
+    if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
+        extern auto kernel_init() -> void;
+        kernel_init();
+    }
+
+    serial_print("failed to exit boot service\r\n");
+    return EFI_ABORTED;
 }
