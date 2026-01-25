@@ -1,5 +1,5 @@
 .global kernel_load_gdt
-.global kernel_switch_stack
+.global osca_start
 
 kernel_load_gdt:
     lgdt (%RCX)              # rcx has descriptor address
@@ -15,7 +15,7 @@ kernel_load_gdt:
 .reload_cs:
     ret
 
-kernel_switch_stack:
+osca_start:
     # RCX = new stack top
     # RDX = address of function to jump to
     mov %RCX, %RSP

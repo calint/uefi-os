@@ -34,8 +34,8 @@ static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
-extern "C" [[noreturn]] auto kernel_switch_stack(u64 stack_top,
-                                                 void (*target)()) -> void;
+extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
+    -> void;
 
 static auto make_heap() -> Heap {
     Heap result{.start = nullptr, .size = 0};
@@ -77,7 +77,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     u64 stack_top = reinterpret_cast<u64>(kernel_stack) + sizeof(kernel_stack);
 
     serial_print("kernel_switch_stack\r\n");
-    kernel_switch_stack(stack_top, osca);
+    osca_start(stack_top, osca);
 }
 
 extern "C" void* memset(void* s, int c, unsigned long n) {
