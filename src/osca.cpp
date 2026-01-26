@@ -23,6 +23,15 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
     }
 }
 
+auto print_hex(u32 x, u32 y, u32 color, u64 val) -> void {
+    constexpr char hex_chars[]{"0123456789ABCDEF"};
+    // print 16 characters for a 64-bit hex value
+    for (i32 i = 15; i >= 0; --i) {
+        char const c{hex_chars[(val >> (i * 4)) & 0xF]};
+        draw_char(x + ((15 - u32(i)) * 8), y, color, c);
+    }
+}
+
 [[noreturn]] auto osca() -> void {
     serial_print("osca x64 kernel is running\r\n");
     serial_print("heap size: 0x");
@@ -35,6 +44,9 @@ void print_string(u32 x, u32 y, u32 color, char const* str) {
         ++di;
     }
     print_string(20, 20, 0x00FFFF00, "OSCA x64");
+    u64 const kernel_addr = u64(kernel_init);
+    print_hex(20, 40, 0xFFFFFFFF, kernel_addr);
+    print_hex(20, 60, 0xFFFFFFFF, u64(frame_buffer.pixels));
     while (true) {
         __asm__("hlt");
     }

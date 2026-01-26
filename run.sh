@@ -8,7 +8,8 @@ WARNINGS="-Weverything -Wno-c++98-compat -Wno-reserved-macro-identifier \
     -Wno-reserved-identifier -Wno-reserved-macro-identifier \
     -Wno-unsafe-buffer-usage -Wno-pre-c++20-compat-pedantic \
     -Wno-missing-prototypes -Wno-padded -Wno-c++98-compat-pedantic \
-    -Wno-language-extension-token -Wno-undef"
+    -Wno-language-extension-token -Wno-undef -Wno-unused-variable \
+    -Wno-unused-function"
 
 clang++ -std=c++26 -target x86_64-unknown-windows-msvc \
     -ffreestanding -fno-stack-protector -mno-red-zone \
@@ -52,3 +53,5 @@ clang -target x86_64-unknown-windows-msvc \
 qemu-system-x86_64 -m 1G -vga std -serial stdio \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
     -drive format=raw,file=fat:rw:esp # -full-screen
+
+# sudo qemu-system-x86_64 -m 1G -serial stdio -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd -drive format=raw,file=/dev/sda

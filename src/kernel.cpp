@@ -28,9 +28,9 @@ struct [[gnu::packed]] GDT {
     GDTEntry data;
 };
 
-static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
-               .code = {0, 0, 0, 0x9A, 0x20, 0},
-               .data = {0, 0, 0, 0x92, 0x00, 0}};
+alignas(8) static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
+                          .code = {0, 0, 0, 0x9A, 0x20, 0},
+                          .data = {0, 0, 0, 0x92, 0x00, 0}};
 
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
@@ -60,7 +60,8 @@ static auto make_heap() -> Heap {
             u64 chunk_start = d->PhysicalStart;
             u64 chunk_size = d->NumberOfPages * 4096;
             if (chunk_size > result.size) {
-                result.start = reinterpret_cast<void*>(chunk_start);
+                u64 aligned_start = (chunk_start + 4095) & ~4095ull;
+                result.start = reinterpret_cast<void*>(aligned_start);
                 result.size = chunk_size;
             }
         }
@@ -86,33 +87,53 @@ static auto get_next_table(u64& entry) -> u64* {
         void* next = allocate_page();
         entry = u64(next) | 0x03; // present + writable
     }
-    return reinterpret_cast<u64*>(entry & ~0xFFFULL);
+    return reinterpret_cast<u64*>(entry & ~0xfffu);
 }
 
 static auto init_paging() -> void {
     u64* pml4 = reinterpret_cast<u64*>(allocate_page());
 
-    // identity map 4GB using 2MB huge pages
-    for (u64 addr = 0; addr < 0x100000000; addr += 0x200000) {
-        u64 pml4_i = (addr >> 39) & 0x1FF;
-        u64 pdp_i = (addr >> 30) & 0x1FF;
-        u64 pd_i = (addr >> 21) & 0x1FF;
-
-        u64* pdp = get_next_table(pml4[pml4_i]);
-        u64* pd = get_next_table(pdp[pdp_i]);
-
-        pd[pd_i] = addr | 0x83; // present + writable + huge
+    // identity map first 4GB to cover standard ram and mmio holes
+    for (u64 addr = 0; addr < 0x4'0000'0000; addr += 0x20'0000) {
+        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1ff]);
+        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1ff]);
+        pd[(addr >> 21) & 0x1ff] = addr | 0x83;
     }
+
+    // map the framebuffer range dynamically
+    u64 fb_start = reinterpret_cast<u64>(frame_buffer.pixels);
+    u64 fb_end = fb_start + (frame_buffer.stride * frame_buffer.height * 4);
+    for (u64 addr = fb_start & ~0x1F'FFFFull; addr < fb_end;
+         addr += 0x20'0000) {
+        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1FF]);
+        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1FF]);
+        pd[(addr >> 21) & 0x1FF] = addr | 0x83;
+    }
+
+    // CRITICAL FIX: identity map the kernel code itself
+    // this ensures the CPU can fetch the next instruction after cr3 is loaded
+    u64 kernel_phys = reinterpret_cast<u64>(kernel_init) & ~0x1F'FFFFull;
+    for (u64 addr = kernel_phys; addr < kernel_phys + 0x40'0000;
+         addr += 0x20'0000) {
+        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1ff]);
+        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1ff]);
+        pd[(addr >> 21) & 0x1ff] = addr | 0x83;
+    }
+
+    // CRITICAL FIX: identity map the kernel stack
+    // this prevents a crash on the next 'ret' or stack access
+    u64 stack_phys = reinterpret_cast<u64>(kernel_stack) & ~0x1F'FFFFull;
+    u64* pdp_s = get_next_table(pml4[(stack_phys >> 39) & 0x1ff]);
+    u64* pd_s = get_next_table(pdp_s[(stack_phys >> 30) & 0x1ff]);
+    pd_s[(stack_phys >> 21) & 0x1ff] = stack_phys | 0x83;
 
     // specific 4KB map for LAPIC to disable caching
     u64 lapic_addr = 0xFEE00000;
-    u64* pdp = get_next_table(pml4[(lapic_addr >> 39) & 0x1FF]);
-    u64* pd = get_next_table(pdp[(lapic_addr >> 30) & 0x1FF]);
-
-    u64* pt = reinterpret_cast<u64*>(allocate_page());
-    pd[(lapic_addr >> 21) & 0x1FF] = reinterpret_cast<u64>(pt) | 0x03;
-    pt[(lapic_addr >> 12) & 0x1FF] =
-        lapic_addr | 0x1B; // present + writable + pwt + pcd
+    u64* pdp_l = get_next_table(pml4[(lapic_addr >> 39) & 0x1FF]);
+    u64* pd_l = get_next_table(pdp_l[(lapic_addr >> 30) & 0x1FF]);
+    u64* pt_l = reinterpret_cast<u64*>(allocate_page());
+    pd_l[(lapic_addr >> 21) & 0x1FF] = reinterpret_cast<u64>(pt_l) | 0x03;
+    pt_l[(lapic_addr >> 12) & 0x1FF] = lapic_addr | 0x1B;
 
     // load new cr3
     asm volatile("mov %0, %%cr3" : : "r"(pml4) : "memory");
