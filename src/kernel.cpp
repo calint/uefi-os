@@ -189,6 +189,18 @@ static auto init_io_apic() -> void {
     io_apic_write(0x10 + 1 * 2 + 1, 0);
 }
 
+static auto init_keyboard_hardware() -> void {
+    // drain the keyboard controller output buffer (0x60)
+    // read up to 64 times or until the status bit (bit 0) is clear
+    for (int i = 0; i < 64; ++i) {
+        u8 status = inb(0x64);
+        if (!(status & 0x01)) {
+            break;
+        }
+        inb(0x60);
+    }
+}
+
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
 
 extern "C" auto kernel_on_keyboard() -> void {
@@ -257,7 +269,8 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     serial_print("init_io_apic\r\n");
     init_io_apic();
 
-    inb(0x60);
+    serial_print("init_keyboard_hardware\r\n");
+    init_keyboard_hardware();
 
     asm volatile("sti");
 
