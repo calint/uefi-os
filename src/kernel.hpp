@@ -42,6 +42,13 @@ inline auto inb(u16 port) -> u8 {
     return result;
 }
 
+static inline auto wrmsr(u32 msr, u64 value) -> void {
+    u32 lo = static_cast<u32>(value);
+    u32 hi = static_cast<u32>(value >> 32);
+
+    asm volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi) : "memory");
+}
+
 inline void serial_print(char const* s) {
     while (*s) {
         outb(0x3F8, u8(*s++));

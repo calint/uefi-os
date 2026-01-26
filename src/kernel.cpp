@@ -45,6 +45,17 @@ extern "C" void* memset(void* s, int c, unsigned long n) {
     return s;
 }
 
+extern "C" void* memcpy(void* dest, const void* src, u64 n) {
+    u8* d = reinterpret_cast<u8*>(dest);
+    const u8* s = reinterpret_cast<const u8*>(src);
+
+    while (n--) {
+        *d++ = *s++;
+    }
+
+    return dest;
+}
+
 static auto make_heap() -> Heap {
     Heap result{};
 
@@ -90,36 +101,70 @@ static auto get_next_table(u64& entry) -> u64* {
     return reinterpret_cast<u64*>(entry & ~0xfffu);
 }
 
-// static buffer for initial paging structures to avoid unmapped heap access
+// Only the top-level PML4 remains as a static array
 alignas(4096) static u64 boot_pml4[512];
-alignas(4096) static u64 boot_pdp[512];
-alignas(4096) static u64 boot_pd[16][512]; // covers 16GB using 2MB pages
+
+// Fixed: Corrected parameter type to u64* and added proper indexing
+static auto get_next_table(u64* table, u64 index) -> u64* {
+    if (!(table[index] & 0x01)) { // If entry is not present
+        void* next = allocate_page();
+        if (next == nullptr)
+            return nullptr;
+
+        // Zero out the new table to prevent garbage mappings
+        memset(next, 0, 4096);
+        // Set Present (0x01) and Writable (0x02)
+        table[index] = reinterpret_cast<u64>(next) | 0x03;
+    }
+    // Return the pointer by masking out the attribute bits
+    return reinterpret_cast<u64*>(table[index] & ~0xFFFull);
+}
+
+static auto map_range(u64 phys, u64 size, u64 flags) -> void {
+    u64 const end = phys + size;
+    // Map in 2MB chunks
+    for (u64 addr = phys; addr < end; addr += 0x200000) {
+        u64 pml4_idx = (addr >> 39) & 0x1FF;
+        u64 pdp_idx = (addr >> 30) & 0x1FF;
+        u64 pd_idx = (addr >> 21) & 0x1FF; // Declared here
+
+        u64* pdp = get_next_table(boot_pml4, pml4_idx);
+        if (pdp == nullptr)
+            return;
+
+        u64* pd = get_next_table(pdp, pdp_idx);
+        if (pd == nullptr)
+            return;
+
+        // 0x80 is the "Huge Page" bit for 2MB entries in the Page Directory
+        pd[pd_idx] = addr | flags | 0x80;
+    }
+}
 
 static auto init_paging() -> void {
-    // setup pml4
-    // map the first 16gb using the static tables
-    boot_pml4[0] = reinterpret_cast<u64>(boot_pdp) | 0x03;
+    // Clear the static PML4
+    memset(boot_pml4, 0, 4096);
 
-    for (u64 i = 0; i < 16; ++i) {
-        boot_pdp[i] = reinterpret_cast<u64>(boot_pd[i]) | 0x03;
+    // 1. Identity map the first 8GB
+    // This covers the kernel (5GB), heap, and stack
+    map_range(0, 0x200000000ull, 0x03);
 
-        for (u64 j = 0; j < 512; ++j) {
-            u64 addr = (i * 0x4000'0000) | (j * 0x20'0000);
-            boot_pd[i][j] = addr | 0x83; // present + writable + huge page
-        }
-    }
+    // 2. Map the Framebuffer dynamically
+    u64 const fb_base = reinterpret_cast<u64>(frame_buffer.pixels);
+    u64 const fb_size =
+        static_cast<u64>(frame_buffer.stride) * frame_buffer.height * 4;
 
-    // map lapic (0xfee00000) and i/o apic (0xfec00000)
-    // these are usually in the first 4gb, so they are already covered by
-    // pass 1. however, we set cache-disable bits for stability
-    u64* pd_a = boot_pd[0];
-    u64* pt_a = reinterpret_cast<u64*>(allocate_page()); // this is safe now
-    pd_a[(0xFEC00000 >> 21) & 0x1ff] = reinterpret_cast<u64>(pt_a) | 0x03;
+    // Align start/end to 2MB boundaries for our huge-page mapper
+    u64 const fb_start = fb_base & ~0x1FFFFFull;
+    u64 const fb_end = (fb_base + fb_size + 0x1FFFFFull) & ~0x1FFFFFull;
+    map_range(fb_start, fb_end - fb_start, 0x03);
 
-    pt_a[(0xFEC00000 >> 12) & 0x1ff] = 0xFEC00000 | 0x1B; // i/o apic
-    pt_a[(0xFEE00000 >> 12) & 0x1ff] = 0xFEE00000 | 0x1B; // local apic
+    // 3. Map APIC regions (typically 0xFEC00000 and 0xFEE00000)
+    // Using Cache Disable (0x10) and Write Through (0x08)
+    map_range(0xFEC00000, 0x200000, 0x1B);
+    map_range(0xFEE00000, 0x200000, 0x1B);
 
-    // load cr3
+    // Load CR3 to activate the dynamic tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
@@ -183,33 +228,53 @@ static auto io_apic_write(u32 reg, u32 val) -> void {
 }
 
 static auto init_io_apic() -> void {
-    // keyboard is usually irq 1
-    io_apic_write(0x10 + 1 * 2, 33);
-    // destination apic id (usually cpu 0)
-    io_apic_write(0x10 + 1 * 2 + 1, 0);
+    // Mask legacy PICs
+    outb(0x21, 0xFF);
+    outb(0xA1, 0xFF);
+
+    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+    u32 const my_id = (lapic[0x020 / 4] >> 24) & 0xFF;
+
+    // Vector 33 (0x21)
+    // Bit 13 = 0 (Polarity: Active High)
+    // Bit 15 = 1 (Trigger Mode: Level)
+    // Bit 16 = 0 (Unmasked)
+    u32 const flags = 33 | (0 << 13) | (1 << 15);
+
+    // Map Pin 1 (Standard) and Pin 2 (Override)
+    u32 pins[] = {1};
+
+    for (u32 pin : pins) {
+        io_apic_write(0x10 + pin * 2, flags);
+        io_apic_write(0x10 + pin * 2 + 1, my_id << 24);
+    }
 }
 
 static auto init_keyboard_hardware() -> void {
-    // drain the keyboard controller output buffer (0x60)
-    // read up to 64 times or until the status bit (bit 0) is clear
-    for (int i = 0; i < 64; ++i) {
-        u8 status = inb(0x64);
-        if (!(status & 0x01)) {
-            break;
-        }
-        inb(0x60);
+    // Flush the controller
+    for (int i = 0; i < 100; ++i) {
+        if ((inb(0x64) & 0x01))
+            inb(0x60);
     }
+
+    // Send "Enable Scanning" command to the keyboard
+    while (inb(0x64) & 0x02)
+        ; // Wait for input buffer empty
+    outb(0x60, 0xF4);
 }
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
 
 extern "C" auto kernel_on_keyboard() -> void {
-    u8 scancode = inb(0x60);
+    // drain all pending scancodes from the controller
+    while (inb(0x64) & 0x01) {
+        u8 scancode = inb(0x60);
+        osca_on_keyboard(scancode);
+    }
 
-    osca_on_keyboard(scancode);
-
-    // send eoi to local apic
-    *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+    // acknowledge the interrupt to the local APIC
+    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+    lapic[0x0B0 / 4] = 0;
 }
 
 extern "C" auto osca_on_timer() -> void;
