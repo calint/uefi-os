@@ -42,13 +42,6 @@ inline auto inb(u16 port) -> u8 {
     return result;
 }
 
-static inline auto wrmsr(u32 msr, u64 value) -> void {
-    u32 lo = static_cast<u32>(value);
-    u32 hi = static_cast<u32>(value >> 32);
-
-    asm volatile("wrmsr" : : "c"(msr), "a"(lo), "d"(hi) : "memory");
-}
-
 inline void serial_print(char const* s) {
     while (*s) {
         outb(0x3F8, u8(*s++));
@@ -58,6 +51,13 @@ inline void serial_print(char const* s) {
 inline void serial_print_hex(u64 val) {
     constexpr u8 hex_chars[] = "0123456789ABCDEF";
     for (int i = 60; i >= 0; i -= 4) {
+        outb(0x3f8, hex_chars[(val >> i) & 0xf]);
+    }
+}
+
+inline void serial_print_hex_byte(u8 val) {
+    constexpr u8 hex_chars[] = "0123456789ABCDEF";
+    for (int i = 4; i >= 0; i -= 4) {
         outb(0x3F8, hex_chars[(val >> i) & 0xF]);
     }
 }

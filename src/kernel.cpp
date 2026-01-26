@@ -176,9 +176,9 @@ struct [[gnu::packed]] IDTR {
 
 alignas(16) static IDTEntry idt[256];
 
+// LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
+// varies between machines
 auto calibrate_apic(u32 hz) -> u32 {
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
-
     // tell PIT to wait ~10ms
     // frequency is 1193182 hz. 10ms = 11931 ticks
     outb(0x43, 0x30); // channel 0, lo/hi, mode 0
@@ -186,13 +186,14 @@ auto calibrate_apic(u32 hz) -> u32 {
     outb(0x40, 0x2E); // hi byte of 11931
 
     // start lapic timer
+    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
     lapic[0x380 / 4] = 0xFFFFFFFF; // max count
 
     // wait for pit to finish
     u8 status = 0;
     while (!(status & 0x80)) {
         outb(0x43, 0xE2); // read back command
-        __asm__ volatile("inb %1, %0" : "=a"(status) : "Nd"(u16(0x40)));
+        status = inb(0x40);
     }
 
     u32 ticks_per_10ms = 0xFFFFFFFF - lapic[0x390 / 4]; // current count reg
@@ -201,7 +202,7 @@ auto calibrate_apic(u32 hz) -> u32 {
 }
 
 static auto init_apic_timer() -> void {
-    // mask legacy pic
+    // disable legacy pic
     outb(0x21, 0xFF);
     outb(0xA1, 0xFF);
 
@@ -225,36 +226,71 @@ static auto init_io_apic() -> void {
     // IRQ 1 is the standard PS/2 Keyboard pin.
     // 0x8E attribute in IDT handles the gate, here we just set the vector.
     u32 const kbd_vector = 33;
+    // polarity (13): active high, trigger mode (15): level
     u32 const kbd_flags = kbd_vector | (0 << 13) | (1 << 15);
-    // Polarity: Active High, Trigger Mode: Level
 
     io_apic_write(0x10 + 1 * 2, kbd_flags);
     io_apic_write(0x10 + 1 * 2 + 1, cpu_id << 24);
 }
 
 static auto init_keyboard_hardware() -> void {
-    // Flush the controller
-    for (int i = 0; i < 100; ++i) {
-        if ((inb(0x64) & 0x01))
-            inb(0x60);
+    // read all pending input
+    while (inb(0x64) & 0x01) {
+        inb(0x60);
     }
 
-    // Send "Enable Scanning" command to the keyboard
+    // wait for input buffer empty before sending "enable scanning" command
     while (inb(0x64) & 0x02)
-        ; // Wait for input buffer empty
-    outb(0x60, 0xF4);
+        ;
+
+    // send "enable scanning" command to the keyboard
+    outb(0x60, 0xf4);
+
+    // wait for ACK (0xfa)
+    for (u32 i = 0; i < 1000000; ++i) { // Larger timeout for slow hardware
+        // check if there is data to read
+        if (inb(0x64) & 0x01) {
+            if (inb(0x60) == 0xFA) {
+                break;
+            }
+        }
+        // small delay to prevent hammering the bus too hard
+        __asm__ volatile("pause");
+    }
+}
+
+// assembler functions
+extern "C" auto kernel_apic_timer_handler() -> void;
+extern "C" auto kernel_keyboard_handler() -> void;
+
+static auto init_idt() -> void {
+    // set idt entry 32 (timer)
+    u64 apic_addr = u64(kernel_apic_timer_handler);
+    idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
+               u32(apic_addr >> 32), 0};
+
+    // set idt entry 33 (keyboard)
+    u64 kbd_addr = u64(kernel_keyboard_handler);
+    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8E, u16(kbd_addr >> 16),
+               u32(kbd_addr >> 32), 0};
+
+    IDTR idtr = {sizeof(idt) - 1, u64(idt)};
+    asm volatile("lidt %0" : : "m"(idtr));
 }
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
 
 extern "C" auto kernel_on_keyboard() -> void {
-    // drain all pending scancodes from the controller
+    // read all pending scancodes from the controller
     while (inb(0x64) & 0x01) {
         u8 scancode = inb(0x60);
+        serial_print("|");
+        serial_print_hex_byte(scancode);
+        serial_print("|");
         osca_on_keyboard(scancode);
     }
 
-    // acknowledge the interrupt to the local APIC
+    // set end of interrupt (EOI)
     volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
     lapic[0x0B0 / 4] = 0;
 }
@@ -264,13 +300,9 @@ extern "C" auto osca_on_timer() -> void;
 extern "C" auto kernel_on_timer() -> void {
     osca_on_timer();
 
-    // acknowledge interrupt
+    // set end of interrupt (EOI)
     *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
 }
-
-// assembler functions
-extern "C" auto kernel_apic_timer_handler() -> void;
-extern "C" auto kernel_keyboard_handler() -> void;
 
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     -> void {
@@ -279,38 +311,15 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     memory_map = map;
     heap = make_heap();
 
-    GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1,
-                           .offset = reinterpret_cast<u64>(&gdt)};
-
     serial_print("kernel_load_gdt\r\n");
+    GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
     kernel_load_gdt(&gdt_desc);
-
-    serial_print("Stack location: ");
-    serial_print_hex(reinterpret_cast<u64>(kernel_stack));
-    serial_print("\r\n");
-
-    serial_print("Heap start: ");
-    serial_print_hex(reinterpret_cast<u64>(heap.start));
-    serial_print("\r\n");
-
-    serial_print("Memory Map Buffer: ");
-    serial_print_hex(reinterpret_cast<u64>(memory_map.buffer));
-    serial_print("\r\n");
 
     serial_print("init_paging\r\n");
     init_paging();
 
-    // set idt entry 32
-    u64 apic_addr = u64(kernel_apic_timer_handler);
-    idt[32] = {u16(apic_addr),       0x08, 0, 0x8E, u16(apic_addr >> 16),
-               u32(apic_addr >> 32), 0};
-    u64 kbd_addr = u64(kernel_keyboard_handler);
-    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8E, u16(kbd_addr >> 16),
-               u32(kbd_addr >> 32), 0};
-
-    serial_print("idt_entry (timer, keyboard)\r\n");
-    IDTR idtr = {sizeof(idt) - 1, reinterpret_cast<u64>(idt)};
-    asm volatile("lidt %0" : : "m"(idtr));
+    serial_print("init_idt\r\n");
+    init_idt();
 
     serial_print("init_apic_timer\r\n");
     init_apic_timer();
@@ -323,7 +332,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     asm volatile("sti");
 
-    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
     serial_print("osca_start\r\n");
+    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
     osca_start(stack_top, osca);
 }
