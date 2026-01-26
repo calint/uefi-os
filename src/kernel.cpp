@@ -96,7 +96,7 @@ alignas(4096) static u64 boot_pdp[512];
 alignas(4096) static u64 boot_pd[16][512]; // covers 16GB using 2MB pages
 
 static auto init_paging() -> void {
-    // 1. setup pml4
+    // setup pml4
     // map the first 16gb using the static tables
     boot_pml4[0] = reinterpret_cast<u64>(boot_pdp) | 0x03;
 
@@ -109,7 +109,7 @@ static auto init_paging() -> void {
         }
     }
 
-    // 2. map lapic (0xfee00000) and i/o apic (0xfec00000)
+    // map lapic (0xfee00000) and i/o apic (0xfec00000)
     // these are usually in the first 4gb, so they are already covered by
     // pass 1. however, we set cache-disable bits for stability
     u64* pd_a = boot_pd[0];
@@ -119,7 +119,7 @@ static auto init_paging() -> void {
     pt_a[(0xFEC00000 >> 12) & 0x1ff] = 0xFEC00000 | 0x1B; // i/o apic
     pt_a[(0xFEE00000 >> 12) & 0x1ff] = 0xFEE00000 | 0x1B; // local apic
 
-    // 3. load cr3
+    // load cr3
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
@@ -237,6 +237,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
+
     serial_print("Stack location: ");
     serial_print_hex(reinterpret_cast<u64>(kernel_stack));
     serial_print("\r\n");
@@ -248,6 +249,7 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
     serial_print("Memory Map Buffer: ");
     serial_print_hex(reinterpret_cast<u64>(memory_map.buffer));
     serial_print("\r\n");
+
     serial_print("init_paging\r\n");
     init_paging();
 
