@@ -99,33 +99,33 @@ alignas(4096) static u64 boot_pml4[512];
 static auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) { // If entry is not present
         void* next = allocate_page();
-        if (next == nullptr)
+        if (next == nullptr) {
             return nullptr;
-
-        // Zero out the new table to prevent garbage mappings
-        memset(next, 0, 4096);
-        // Set Present (0x01) and Writable (0x02)
+        }
+        // set present (0x01) and writable (0x02)
         table[index] = reinterpret_cast<u64>(next) | 0x03;
     }
     // Return the pointer by masking out the attribute bits
-    return reinterpret_cast<u64*>(table[index] & ~0xFFFull);
+    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
 }
 
 static auto map_range(u64 phys, u64 size, u64 flags) -> void {
     u64 const end = phys + size;
-    // Map in 2MB chunks
-    for (u64 addr = phys; addr < end; addr += 0x200000) {
-        u64 pml4_idx = (addr >> 39) & 0x1FF;
-        u64 pdp_idx = (addr >> 30) & 0x1FF;
-        u64 pd_idx = (addr >> 21) & 0x1FF; // Declared here
+    // map in 2MB chunks
+    for (u64 addr = phys; addr < end; addr += 0x20'0000) {
+        u64 pml4_idx = (addr >> 39) & 0x1ff;
+        u64 pdp_idx = (addr >> 30) & 0x1ff;
+        u64 pd_idx = (addr >> 21) & 0x1ff;
 
         u64* pdp = get_next_table(boot_pml4, pml4_idx);
-        if (pdp == nullptr)
+        if (pdp == nullptr) {
             return;
+        }
 
         u64* pd = get_next_table(pdp, pdp_idx);
-        if (pd == nullptr)
+        if (pd == nullptr) {
             return;
+        }
 
         // 0x80 is the "Huge Page" bit for 2MB entries in the Page Directory
         pd[pd_idx] = addr | flags | 0x80;
@@ -133,29 +133,25 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> void {
 }
 
 static auto init_paging() -> void {
-    // Clear the static PML4
-    memset(boot_pml4, 0, 4096);
-
-    // 1. Identity map the first 8GB
+    // identity map the first 8GB
     // This covers the kernel (5GB), heap, and stack
-    map_range(0, 0x200000000ull, 0x03);
+    map_range(0, 0x2'0000'0000ull, 0x03);
 
-    // 2. Map the Framebuffer dynamically
-    u64 const fb_base = reinterpret_cast<u64>(frame_buffer.pixels);
-    u64 const fb_size =
-        static_cast<u64>(frame_buffer.stride) * frame_buffer.height * 4;
+    // map the framebuffer dynamically
+    u64 const fb_base = u64(frame_buffer.pixels);
+    u64 const fb_size = u64(frame_buffer.stride) * frame_buffer.height * 4;
 
-    // Align start/end to 2MB boundaries for our huge-page mapper
-    u64 const fb_start = fb_base & ~0x1FFFFFull;
-    u64 const fb_end = (fb_base + fb_size + 0x1FFFFFull) & ~0x1FFFFFull;
+    // align start/end to 2MB boundaries for our huge-page mapper
+    u64 const fb_start = fb_base & ~0x1fffffull;
+    u64 const fb_end = (fb_base + fb_size + 0x1fffffull) & ~0x1fffffull;
     map_range(fb_start, fb_end - fb_start, 0x03);
 
-    // 3. Map APIC regions (typically 0xFEC00000 and 0xFEE00000)
-    // Using Cache Disable (0x10) and Write Through (0x08)
-    map_range(0xFEC00000, 0x200000, 0x1B);
-    map_range(0xFEE00000, 0x200000, 0x1B);
+    // map APIC regions (typically 0xffc0'0000 and 0xfee0'0000)
+    // using cache disable (0x10) and write hhrough (0x08)
+    map_range(0xfec0'0000, 0x20'0000, 0x1b);
+    map_range(0xfee0'0000, 0x20'0000, 0x1b);
 
-    // Load CR3 to activate the dynamic tables
+    // load CR3 to activate the dynamic tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
@@ -182,49 +178,49 @@ auto calibrate_apic(u32 hz) -> u32 {
     // tell PIT to wait ~10ms
     // frequency is 1193182 hz. 10ms = 11931 ticks
     outb(0x43, 0x30); // channel 0, lo/hi, mode 0
-    outb(0x40, 0x2B); // lo byte of 11931
-    outb(0x40, 0x2E); // hi byte of 11931
+    outb(0x40, 0x2b); // lo byte of 11931
+    outb(0x40, 0x2e); // hi byte of 11931
 
     // start lapic timer
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
-    lapic[0x380 / 4] = 0xFFFFFFFF; // max count
+    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
+    lapic[0x380 / 4] = 0xffff'ffff; // max count
 
     // wait for pit to finish
     u8 status = 0;
     while (!(status & 0x80)) {
-        outb(0x43, 0xE2); // read back command
+        outb(0x43, 0xe2); // read back command
         status = inb(0x40);
     }
 
-    u32 ticks_per_10ms = 0xFFFFFFFF - lapic[0x390 / 4]; // current count reg
+    u32 ticks_per_10ms = 0xffff'ffff - lapic[0x390 / 4]; // current count reg
 
     return ticks_per_10ms * 100 / hz;
 }
 
 static auto init_apic_timer() -> void {
     // disable legacy pic
-    outb(0x21, 0xFF);
-    outb(0xA1, 0xFF);
+    outb(0x21, 0xff);
+    outb(0xa1, 0xff);
 
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
-    lapic[0x0F0 / 4] = 0x1FF;             // software enable + spurious vector
-    lapic[0x3E0 / 4] = 0x03;              // divide by 16
+    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
+    lapic[0x0f0 / 4] = 0x1ff;             // software enable + spurious vector
+    lapic[0x3e0 / 4] = 0x03;              // divide by 16
     lapic[0x320 / 4] = (1 << 17) | 32;    // periodic mode + vector 32
     lapic[0x380 / 4] = calibrate_apic(2); // initial count
 }
 
 static auto io_apic_write(u32 reg, u32 val) -> void {
-    volatile u32* io_apic = reinterpret_cast<u32*>(0xFEC00000);
+    volatile u32* io_apic = reinterpret_cast<u32*>(0xfec0'0000);
     io_apic[0] = reg; // select register
     io_apic[4] = val; // write value
 }
 
 static auto init_io_apic() -> void {
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
-    u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xFF;
+    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
+    u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
 
-    // IRQ 1 is the standard PS/2 Keyboard pin.
-    // 0x8E attribute in IDT handles the gate, here we just set the vector.
+    // irq 1 is the standard ps/2 keyboard pin.
+    // 0x8e attribute in idt handles the gate, here we just set the vector.
     u32 const kbd_vector = 33;
     // polarity (13): active high, trigger mode (15): level
     u32 const kbd_flags = kbd_vector | (0 << 13) | (1 << 15);
@@ -247,10 +243,10 @@ static auto init_keyboard_hardware() -> void {
     outb(0x60, 0xf4);
 
     // wait for ACK (0xfa)
-    for (u32 i = 0; i < 1000000; ++i) { // Larger timeout for slow hardware
+    for (u32 i = 0; i < 1'000'000; ++i) { // larger timeout for slow hardware
         // check if there is data to read
         if (inb(0x64) & 0x01) {
-            if (inb(0x60) == 0xFA) {
+            if (inb(0x60) == 0xfa) {
                 break;
             }
         }
@@ -271,7 +267,7 @@ static auto init_idt() -> void {
 
     // set idt entry 33 (keyboard)
     u64 kbd_addr = u64(kernel_keyboard_handler);
-    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8E, u16(kbd_addr >> 16),
+    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 
     IDTR idtr = {sizeof(idt) - 1, u64(idt)};
@@ -291,7 +287,7 @@ extern "C" auto kernel_on_keyboard() -> void {
     }
 
     // set end of interrupt (EOI)
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
     lapic[0x0B0 / 4] = 0;
 }
 
@@ -301,7 +297,7 @@ extern "C" auto kernel_on_timer() -> void {
     osca_on_timer();
 
     // set end of interrupt (EOI)
-    *reinterpret_cast<volatile u32*>(0xFEE000B0) = 0;
+    *reinterpret_cast<volatile u32*>(0xfee0'00b0) = 0;
 }
 
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
