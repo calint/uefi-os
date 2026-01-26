@@ -142,8 +142,8 @@ static auto init_paging() -> void {
     u64 const fb_size = u64(frame_buffer.stride) * frame_buffer.height * 4;
 
     // align start/end to 2MB boundaries for our huge-page mapper
-    u64 const fb_start = fb_base & ~0x1fffffull;
-    u64 const fb_end = (fb_base + fb_size + 0x1fffffull) & ~0x1fffffull;
+    u64 const fb_start = fb_base & ~0x1f'ffffull;
+    u64 const fb_end = (fb_base + fb_size + 0x1f'ffffull) & ~0x1'fffffull;
     map_range(fb_start, fb_end - fb_start, 0x03);
 
     // map APIC regions (typically 0xffc0'0000 and 0xfee0'0000)
@@ -172,6 +172,8 @@ struct [[gnu::packed]] IDTR {
 
 alignas(16) static IDTEntry idt[256];
 
+static volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
+
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
 auto calibrate_apic(u32 hz) -> u32 {
@@ -182,7 +184,6 @@ auto calibrate_apic(u32 hz) -> u32 {
     outb(0x40, 0x2e); // hi byte of 11931
 
     // start lapic timer
-    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
     lapic[0x380 / 4] = 0xffff'ffff; // max count
 
     // wait for pit to finish
@@ -202,7 +203,6 @@ static auto init_apic_timer() -> void {
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
 
-    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
     lapic[0x0f0 / 4] = 0x1ff;             // software enable + spurious vector
     lapic[0x3e0 / 4] = 0x03;              // divide by 16
     lapic[0x320 / 4] = (1 << 17) | 32;    // periodic mode + vector 32
@@ -216,7 +216,6 @@ static auto io_apic_write(u32 reg, u32 val) -> void {
 }
 
 static auto init_io_apic() -> void {
-    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
     u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
 
     // irq 1 is the standard ps/2 keyboard pin.
@@ -287,7 +286,6 @@ extern "C" auto kernel_on_keyboard() -> void {
     }
 
     // set end of interrupt (EOI)
-    volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
     lapic[0x0B0 / 4] = 0;
 }
 
@@ -297,7 +295,7 @@ extern "C" auto kernel_on_timer() -> void {
     osca_on_timer();
 
     // set end of interrupt (EOI)
-    *reinterpret_cast<volatile u32*>(0xfee0'00b0) = 0;
+    lapic[0x0B0 / 4] = 0;
 }
 
 extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
