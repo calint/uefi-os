@@ -61,13 +61,6 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
     print_hex(100, 80, 0x00FF00FF, lapic_id, 3);
 
     while (true) {
-        // Read IRR Register (0x200 - 0x270). If bit 33 is set, the interrupt is
-        // pending.
-        u32 const irr_32_63 = lapic[0x210 / 4];
-        if (irr_32_63 & (1 << (33 - 32))) {
-            print_string(20, 250, 0x00FF0000, "IRQ 33 PENDING IN APIC!", 3);
-        }
-
         __asm__("hlt");
     }
 }
@@ -89,6 +82,13 @@ static u64 kbd_intr_total = 0;
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     kbd_intr_total++;
+
+    // clear
+    for (u32 y = 120 * 4; y < 160 * 4; ++y) {
+        for (u32 x = 0; x < frame_buffer.width; ++x) {
+            frame_buffer.pixels[y * frame_buffer.stride + x] = 0;
+        }
+    }
 
     // Draw big "INTR" label and count
     print_string(20, 120, 0x0000FF00, "KBD INTR: ", 4);

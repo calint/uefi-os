@@ -93,18 +93,9 @@ static auto allocate_page() -> void* {
     return ptr;
 }
 
-static auto get_next_table(u64& entry) -> u64* {
-    if (!(entry & 1)) {
-        void* next = allocate_page();
-        entry = u64(next) | 0x03; // present + writable
-    }
-    return reinterpret_cast<u64*>(entry & ~0xfffu);
-}
-
 // Only the top-level PML4 remains as a static array
 alignas(4096) static u64 boot_pml4[512];
 
-// Fixed: Corrected parameter type to u64* and added proper indexing
 static auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) { // If entry is not present
         void* next = allocate_page();
@@ -228,26 +219,17 @@ static auto io_apic_write(u32 reg, u32 val) -> void {
 }
 
 static auto init_io_apic() -> void {
-    // Mask legacy PICs
-    outb(0x21, 0xFF);
-    outb(0xA1, 0xFF);
-
     volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
-    u32 const my_id = (lapic[0x020 / 4] >> 24) & 0xFF;
+    u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xFF;
 
-    // Vector 33 (0x21)
-    // Bit 13 = 0 (Polarity: Active High)
-    // Bit 15 = 1 (Trigger Mode: Level)
-    // Bit 16 = 0 (Unmasked)
-    u32 const flags = 33 | (0 << 13) | (1 << 15);
+    // IRQ 1 is the standard PS/2 Keyboard pin.
+    // 0x8E attribute in IDT handles the gate, here we just set the vector.
+    u32 const kbd_vector = 33;
+    u32 const kbd_flags = kbd_vector | (0 << 13) | (1 << 15);
+    // Polarity: Active High, Trigger Mode: Level
 
-    // Map Pin 1 (Standard) and Pin 2 (Override)
-    u32 pins[] = {1};
-
-    for (u32 pin : pins) {
-        io_apic_write(0x10 + pin * 2, flags);
-        io_apic_write(0x10 + pin * 2 + 1, my_id << 24);
-    }
+    io_apic_write(0x10 + 1 * 2, kbd_flags);
+    io_apic_write(0x10 + 1 * 2 + 1, cpu_id << 24);
 }
 
 static auto init_keyboard_hardware() -> void {
