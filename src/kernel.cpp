@@ -90,53 +90,37 @@ static auto get_next_table(u64& entry) -> u64* {
     return reinterpret_cast<u64*>(entry & ~0xfffu);
 }
 
+// static buffer for initial paging structures to avoid unmapped heap access
+alignas(4096) static u64 boot_pml4[512];
+alignas(4096) static u64 boot_pdp[512];
+alignas(4096) static u64 boot_pd[16][512]; // covers 16GB using 2MB pages
+
 static auto init_paging() -> void {
-    u64* pml4 = reinterpret_cast<u64*>(allocate_page());
+    // 1. setup pml4
+    // map the first 16gb using the static tables
+    boot_pml4[0] = reinterpret_cast<u64>(boot_pdp) | 0x03;
 
-    // identity map first 4GB to cover standard ram and mmio holes
-    for (u64 addr = 0; addr < 0x4'0000'0000; addr += 0x20'0000) {
-        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1ff]);
-        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1ff]);
-        pd[(addr >> 21) & 0x1ff] = addr | 0x83;
+    for (u64 i = 0; i < 16; ++i) {
+        boot_pdp[i] = reinterpret_cast<u64>(boot_pd[i]) | 0x03;
+
+        for (u64 j = 0; j < 512; ++j) {
+            u64 addr = (i * 0x4000'0000) | (j * 0x20'0000);
+            boot_pd[i][j] = addr | 0x83; // present + writable + huge page
+        }
     }
 
-    // map the framebuffer range dynamically
-    u64 fb_start = reinterpret_cast<u64>(frame_buffer.pixels);
-    u64 fb_end = fb_start + (frame_buffer.stride * frame_buffer.height * 4);
-    for (u64 addr = fb_start & ~0x1F'FFFFull; addr < fb_end;
-         addr += 0x20'0000) {
-        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1FF]);
-        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1FF]);
-        pd[(addr >> 21) & 0x1FF] = addr | 0x83;
-    }
+    // 2. map lapic (0xfee00000) and i/o apic (0xfec00000)
+    // these are usually in the first 4gb, so they are already covered by
+    // pass 1. however, we set cache-disable bits for stability
+    u64* pd_a = boot_pd[0];
+    u64* pt_a = reinterpret_cast<u64*>(allocate_page()); // this is safe now
+    pd_a[(0xFEC00000 >> 21) & 0x1ff] = reinterpret_cast<u64>(pt_a) | 0x03;
 
-    // CRITICAL FIX: identity map the kernel code itself
-    // this ensures the CPU can fetch the next instruction after cr3 is loaded
-    u64 kernel_phys = reinterpret_cast<u64>(kernel_init) & ~0x1F'FFFFull;
-    for (u64 addr = kernel_phys; addr < kernel_phys + 0x40'0000;
-         addr += 0x20'0000) {
-        u64* pdp = get_next_table(pml4[(addr >> 39) & 0x1ff]);
-        u64* pd = get_next_table(pdp[(addr >> 30) & 0x1ff]);
-        pd[(addr >> 21) & 0x1ff] = addr | 0x83;
-    }
+    pt_a[(0xFEC00000 >> 12) & 0x1ff] = 0xFEC00000 | 0x1B; // i/o apic
+    pt_a[(0xFEE00000 >> 12) & 0x1ff] = 0xFEE00000 | 0x1B; // local apic
 
-    // CRITICAL FIX: identity map the kernel stack
-    // this prevents a crash on the next 'ret' or stack access
-    u64 stack_phys = reinterpret_cast<u64>(kernel_stack) & ~0x1F'FFFFull;
-    u64* pdp_s = get_next_table(pml4[(stack_phys >> 39) & 0x1ff]);
-    u64* pd_s = get_next_table(pdp_s[(stack_phys >> 30) & 0x1ff]);
-    pd_s[(stack_phys >> 21) & 0x1ff] = stack_phys | 0x83;
-
-    // specific 4KB map for LAPIC to disable caching
-    u64 lapic_addr = 0xFEE00000;
-    u64* pdp_l = get_next_table(pml4[(lapic_addr >> 39) & 0x1FF]);
-    u64* pd_l = get_next_table(pdp_l[(lapic_addr >> 30) & 0x1FF]);
-    u64* pt_l = reinterpret_cast<u64*>(allocate_page());
-    pd_l[(lapic_addr >> 21) & 0x1FF] = reinterpret_cast<u64>(pt_l) | 0x03;
-    pt_l[(lapic_addr >> 12) & 0x1FF] = lapic_addr | 0x1B;
-
-    // load new cr3
-    asm volatile("mov %0, %%cr3" : : "r"(pml4) : "memory");
+    // 3. load cr3
+    asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
 struct [[gnu::packed]] IDTEntry {
@@ -241,7 +225,17 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
+    serial_print("Stack location: ");
+    serial_print_hex(reinterpret_cast<u64>(kernel_stack));
+    serial_print("\r\n");
 
+    serial_print("Heap start: ");
+    serial_print_hex(reinterpret_cast<u64>(heap.start));
+    serial_print("\r\n");
+
+    serial_print("Memory Map Buffer: ");
+    serial_print_hex(reinterpret_cast<u64>(memory_map.buffer));
+    serial_print("\r\n");
     serial_print("init_paging\r\n");
     init_paging();
 
@@ -262,6 +256,8 @@ extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
 
     serial_print("init_io_apic\r\n");
     init_io_apic();
+
+    inb(0x60);
 
     asm volatile("sti");
 

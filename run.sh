@@ -50,7 +50,7 @@ clang -target x86_64-unknown-windows-msvc \
     -o esp/EFI/BOOT/BOOTX64.EFI \
     uefi.o kernel_asm.o kernel.o osca.o
 
-qemu-system-x86_64 -m 1G -vga std -serial stdio \
+qemu-system-x86_64 -m 16G -vga std -serial stdio \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
     -drive format=raw,file=fat:rw:esp # -full-screen
 
