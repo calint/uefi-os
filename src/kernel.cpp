@@ -35,7 +35,7 @@ extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
     -> void;
 
 extern "C" void* memset(void* s, int c, unsigned long n) {
-    auto p = reinterpret_cast<unsigned char*>(s);
+    auto p = static_cast<unsigned char*>(s);
     while (n--) {
         *p++ = static_cast<unsigned char>(c);
     }
@@ -43,8 +43,8 @@ extern "C" void* memset(void* s, int c, unsigned long n) {
 }
 
 extern "C" void* memcpy(void* dest, const void* src, u64 n) {
-    auto d = reinterpret_cast<u8*>(dest);
-    auto s = reinterpret_cast<u8 const*>(src);
+    auto d = static_cast<u8*>(dest);
+    auto s = static_cast<u8 const*>(src);
     while (n--) {
         *d++ = *s++;
     }
