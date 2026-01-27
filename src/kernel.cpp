@@ -2,7 +2,7 @@
 
 #include "kernel.hpp"
 
-alignas(16) static u8 kernel_stack[16384];
+alignas(16) static u8 stack[16384];
 
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
@@ -107,6 +107,12 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     auto start = phys & ~0x1f'ffffull;
     auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
 
+    serial_print("map_range: ");
+    serial_print_hex(start);
+    serial_print(" -> ");
+    serial_print_hex(end);
+    serial_print("\n");
+
     // map in 2MB chunks
     for (auto addr = start; addr < end; addr += 0x20'0000) {
         auto pml4_idx = (addr >> 39) & 0x1ff;
@@ -130,34 +136,36 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
 }
 
 static auto init_paging() -> void {
-    // identity map the first 8GB
-    map_range(0, 0x2'0000'0000ull, 0x03);
-
-    // map the framebuffer
-    auto fb_base = u64(frame_buffer.pixels);
-    auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
-    map_range(fb_base, fb_size, 0x03);
-
-    // map APIC regions (typically 0xffc0'0000 and 0xfee0'0000)
-    // using cache disable (0x10) and write hhrough (0x08)
-    map_range(0xfec0'0000, 0x20'0000, 0x1b);
-    map_range(0xfee0'0000, 0x20'0000, 0x1b);
-
-    // map ACPI reclaim and NVS regions from the UEFI Memory Map
-    // this ensures RSDP/XSDT/MADT are accessible even if above 8GB
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
             u64(desc) + (i * memory_map.descriptor_size));
 
-        // ACPI Reclaim contains the tables (XSDT, MADT, etc.)
-        // ACPI NVS contains data the OS must preserve
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 0x03);
+            serial_print("* acpi tables\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData)) {
+            serial_print("* loaded kernel\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+        } else if (d->Type == EfiMemoryMappedIO) {
+            serial_print("* mmio region\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 0x1B);
         }
     }
+
+    serial_print("* apic\n");
+    map_range(0xfec0'0000, 0x20'0000, 0x1b);
+    map_range(0xfee0'0000, 0x20'0000, 0x1b);
+
+    serial_print("* frame buffer\n");
+    auto fb_base = u64(frame_buffer.pixels);
+    auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
+    map_range(fb_base, fb_size, 3);
+
+    serial_print("* heap\n");
+    map_range(u64(heap.start), heap.size, 3);
 
     // load CR3 to activate the dynamic tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
@@ -325,7 +333,7 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     serial_print("init_keyboard_hardware\r\n");
     init_keyboard_hardware();
 
-    auto stack_top = u64(kernel_stack) + sizeof(kernel_stack);
+    auto stack_top = u64(stack) + sizeof(stack);
     serial_print("osca_start\r\n");
     osca_start(stack_top, osca);
 }

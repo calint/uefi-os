@@ -58,6 +58,9 @@ inline auto serial_print_hex(u64 val) -> void {
     constexpr u8 hex_chars[] = "0123456789ABCDEF";
     for (auto i = 60; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
+        if (i != 0 && (i % 16 == 0)) {
+            outb(0x3f8, '_');
+        }
     }
 }
 
