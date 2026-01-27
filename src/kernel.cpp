@@ -2,7 +2,9 @@
 
 #include "kernel.hpp"
 
-alignas(16) static u8 stack[16384];
+// note: stack must be 16 byte aligned and top of stack sets RSP
+//       make sure top of stack is 16 bytes aligned
+alignas(16) static u8 stack[16384 * 16];
 
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
