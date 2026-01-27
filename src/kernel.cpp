@@ -253,7 +253,7 @@ static auto init_keyboard_hardware() -> void {
     }
 }
 
-// assembler functions
+// callback assembler functions
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
