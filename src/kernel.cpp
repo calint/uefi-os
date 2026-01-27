@@ -329,12 +329,12 @@ extern "C" auto kernel_on_timer() -> void {
     lapic[0x0B0 / 4] = 0;
 }
 
-[[noreturn]] auto osca_start(u64 stack_top, void (*target)()) -> void {
+[[noreturn]] auto osca_start() -> void {
     asm volatile("mov %0, %%rsp\n\t"
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
-                 : "r"(stack_top), "r"(target)
+                 : "r"(stack), "r"(osca)
                  : "memory");
 
     __builtin_unreachable();
@@ -361,7 +361,6 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     serial_print("init_keyboard_hardware\n");
     init_keyboard_hardware();
 
-    auto stack_top = u64(stack) + sizeof(stack);
     serial_print("osca_start\n");
-    osca_start(stack_top, osca);
+    osca_start();
 }
