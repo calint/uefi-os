@@ -68,7 +68,6 @@ inline void serial_print_hex_byte(u8 val) {
     }
 }
 
-extern "C" [[noreturn]] auto kernel_init(FrameBuffer, MemoryMap, KeyboardConfig)
-    -> void;
+extern "C" [[noreturn]] auto kernel_start() -> void;
 
 [[noreturn]] auto osca() -> void;

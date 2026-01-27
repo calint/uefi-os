@@ -1,10 +1,9 @@
 #include <efi.h>
 
 #include "acpi.hpp"
-#include "efiprot.h"
 #include "kernel.hpp"
 
-static bool GuidsEqual(const EFI_GUID* g1, const EFI_GUID* g2) {
+static auto guids_equal(const EFI_GUID* g1, const EFI_GUID* g2) -> bool {
     const u64* p1 = reinterpret_cast<const u64*>(g1);
     const u64* p2 = reinterpret_cast<const u64*>(g2);
     return (p1[0] == p2[0]) && (p1[1] == p2[1]);
@@ -17,20 +16,26 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     auto bs = sys->BootServices;
 
-    EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+    EFI_GUID graphics_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
 
-    if (bs->LocateProtocol(&guid, nullptr, reinterpret_cast<void**>(&gop)) !=
-        EFI_SUCCESS) {
+    if (bs->LocateProtocol(&graphics_guid, nullptr,
+                           reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
         serial_print("failed to get frame buffer\r\n");
         return EFI_ABORTED;
     }
+    frame_buffer = {.pixels =
+                        reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
+                    .width = gop->Mode->Info->HorizontalResolution,
+                    .height = gop->Mode->Info->VerticalResolution,
+                    .stride = gop->Mode->Info->PixelsPerScanLine};
 
     // make keyboard config
     RSDP* rsdp = nullptr;
     EFI_GUID acpi_20_guid = ACPI_20_TABLE_GUID;
     for (UINTN i = 0; i < sys->NumberOfTableEntries; ++i) {
-        if (GuidsEqual(&sys->ConfigurationTable[i].VendorGuid, &acpi_20_guid)) {
+        if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
+                        &acpi_20_guid)) {
             rsdp =
                 reinterpret_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
             break;
@@ -80,6 +85,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             }
         }
     }
+    keyboard_config = {.gsi = kbd_gsi, .flags = kbd_flags};
 
     // make memory map
     UINTN size = 0;
@@ -101,21 +107,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         serial_print("failed to get memory map\r\n");
         return EFI_ABORTED;
     }
+    memory_map = {.buffer = reinterpret_cast<void*>(map),
+                  .size = size,
+                  .descriptor_size = d_size,
+                  .descriptor_version = d_ver};
 
     if (bs->ExitBootServices(img, key) != EFI_SUCCESS) {
         serial_print("failed to exit boot service\r\n");
         return EFI_ABORTED;
     }
 
-    kernel_init({.pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
-                 .width = gop->Mode->Info->HorizontalResolution,
-                 .height = gop->Mode->Info->VerticalResolution,
-                 .stride = gop->Mode->Info->PixelsPerScanLine},
-                {.buffer = reinterpret_cast<void*>(map),
-                 .size = size,
-                 .descriptor_size = d_size,
-                 .descriptor_version = d_ver},
-                {.gsi = kbd_gsi, .flags = kbd_flags});
+    kernel_start();
 
     return EFI_SUCCESS;
 }

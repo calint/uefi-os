@@ -34,8 +34,15 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
     constexpr char hex_chars[]{"0123456789ABCDEF"};
     // print 16 characters for a 64-bit hex value
     for (i32 i = 15; i >= 0; --i) {
-        char const c{hex_chars[(val >> (i * 4)) & 0xF]};
-        draw_char(x + ((15 - u32(i)) * 8), y, color, c, scale);
+        char const c{hex_chars[(val >> (i * 4)) & 0xf]};
+        if (i < 15) {
+            if (((i + 1) % 4) == 0) {
+                draw_char(x, y, color, '_', scale);
+                x += 8;
+            }
+        }
+        draw_char(x, y, color, c, scale);
+        x += 8;
     }
 }
 
@@ -51,18 +58,20 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
         ++di;
     }
     print_string(20, 20, 0x00FFFF00, "OSCA x64", 3);
-    u64 const kernel_addr = u64(kernel_init);
-    print_hex(20, 40, 0xFFFFFFFF, kernel_addr, 3);
-    print_hex(20, 60, 0xFFFFFFFF, u64(frame_buffer.pixels), 3);
+    u64 const kernel_addr = u64(kernel_start);
+    print_string(20, 30, 0x00FF00FF, "KERNEL: ", 3);
+    print_hex(100, 30, 0xFFFFFFFF, kernel_addr, 3);
+    print_string(20, 40, 0x00FF00FF, "FRAMEBUF: ", 3);
+    print_hex(100, 40, 0xFFFFFFFF, u64(frame_buffer.pixels), 3);
     volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
     u32 const lapic_id =
         (lapic[0x020 / 4] >> 24) & 0xFF; // Local APIC ID Register
-    print_string(20, 80, 0x00FF00FF, "LAPIC ID: ", 3);
-    print_hex(100, 80, 0x00FF00FF, lapic_id, 3);
-    print_string(20, 100, 0x00FF00FF, "KEYB GSI: ", 3);
-    print_hex(100, 100, 0x00FF00FF, keyboard_config.gsi, 3);
-    print_string(20, 120, 0x00FF00FF, "KEYB FLGS: ", 3);
-    print_hex(100, 120, 0x00FF00FF, keyboard_config.flags, 3);
+    print_string(20, 50, 0x00FF00FF, "LAPIC ID: ", 3);
+    print_hex(100, 50, 0x00FF00FF, lapic_id, 3);
+    print_string(20, 60, 0x00FF00FF, "KEYB GSI: ", 3);
+    print_hex(100, 60, 0x00FF00FF, keyboard_config.gsi, 3);
+    print_string(20, 70, 0x00FF00FF, "KEYB FLGS: ", 3);
+    print_hex(100, 70, 0x00FF00FF, keyboard_config.flags, 3);
 
     while (true) {
         __asm__("hlt");
@@ -88,19 +97,19 @@ extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     kbd_intr_total++;
 
     // clear
-    for (u32 y = 120 * 4; y < 160 * 4; ++y) {
+    for (u32 y = 120 * 3; y < 160 * 3; ++y) {
         for (u32 x = 0; x < frame_buffer.width; ++x) {
             frame_buffer.pixels[y * frame_buffer.stride + x] = 0;
         }
     }
 
     // Draw big "INTR" label and count
-    print_string(20, 120, 0x0000FF00, "KBD INTR: ", 4);
-    print_hex(100, 120, 0x0000FF00, kbd_intr_total, 4);
+    print_string(20, 120, 0x0000FF00, "KBD INTR: ", 3);
+    print_hex(100, 120, 0x0000FF00, kbd_intr_total, 3);
 
     // Draw the latest scancode extra large
-    print_string(20, 140, 0x00FFFFFF, "SCAN: ", 4);
-    print_hex(60, 140, 0x00FFFFFF, scancode, 4);
+    print_string(20, 130, 0x00FFFFFF, "SCAN: ", 3);
+    print_hex(60, 130, 0x00FFFFFF, scancode, 3);
 
     // Keep your original color box but make it bigger
     for (u32 y = 0; y < 32; ++y) {

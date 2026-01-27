@@ -293,12 +293,8 @@ extern "C" auto kernel_on_timer() -> void {
     lapic[0x0B0 / 4] = 0;
 }
 
-extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map,
-                                         KeyboardConfig keyb) -> void {
+extern "C" [[noreturn]] auto kernel_start() -> void {
 
-    frame_buffer = fb;
-    memory_map = map;
-    keyboard_config = keyb;
     heap = make_heap();
 
     serial_print("kernel_load_gdt\r\n");
