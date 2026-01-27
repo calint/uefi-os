@@ -32,17 +32,13 @@ void print_string(u32 x, u32 y, u32 color, char const* str, u32 scale = 1) {
 
 auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
     constexpr char hex_chars[]{"0123456789ABCDEF"};
-    // print 16 characters for a 64-bit hex value
-    for (i32 i = 15; i >= 0; --i) {
-        char const c{hex_chars[(val >> (i * 4)) & 0xf]};
-        if (i < 15) {
-            if (((i + 1) % 4) == 0) {
-                draw_char(x, y, color, '_', scale);
-                x += 8;
-            }
-        }
-        draw_char(x, y, color, c, scale);
+    for (i8 i = 60; i >= 0; i -= 4) {
+        draw_char(x, y, color, hex_chars[(val >> i) & 0xf], scale);
         x += 8;
+        if (i != 0 && (i % 16) == 0) {
+            draw_char(x, y, color, '_', scale);
+            x += 8;
+        }
     }
 }
 
@@ -59,19 +55,19 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
     }
     print_string(20, 20, 0x00FFFF00, "OSCA x64", 3);
     u64 const kernel_addr = u64(kernel_start);
-    print_string(20, 30, 0x00FF00FF, "KERNEL: ", 3);
+    print_string(20, 30, 0xffffffff, "KERNEL: ", 3);
     print_hex(100, 30, 0xFFFFFFFF, kernel_addr, 3);
-    print_string(20, 40, 0x00FF00FF, "FRAMEBUF: ", 3);
+    print_string(20, 40, 0xffffffff, "FRAMEBUF: ", 3);
     print_hex(100, 40, 0xFFFFFFFF, u64(frame_buffer.pixels), 3);
     volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
     u32 const lapic_id =
         (lapic[0x020 / 4] >> 24) & 0xFF; // Local APIC ID Register
-    print_string(20, 50, 0x00FF00FF, "LAPIC ID: ", 3);
-    print_hex(100, 50, 0x00FF00FF, lapic_id, 3);
-    print_string(20, 60, 0x00FF00FF, "KEYB GSI: ", 3);
-    print_hex(100, 60, 0x00FF00FF, keyboard_config.gsi, 3);
-    print_string(20, 70, 0x00FF00FF, "KEYB FLGS: ", 3);
-    print_hex(100, 70, 0x00FF00FF, keyboard_config.flags, 3);
+    print_string(20, 50, 0xffffffff, "LAPIC ID: ", 3);
+    print_hex(100, 50, 0xffffffff, lapic_id, 3);
+    print_string(20, 60, 0xffffffff, "KEYB GSI: ", 3);
+    print_hex(100, 60, 0xffffffff, keyboard_config.gsi, 3);
+    print_string(20, 70, 0xffffffff, "KEYB FLGS: ", 3);
+    print_hex(100, 70, 0xffffffff, keyboard_config.flags, 3);
 
     while (true) {
         __asm__("hlt");

@@ -50,7 +50,7 @@ inline auto inb(u16 port) -> u8 {
 
 inline void serial_print(char const* s) {
     while (*s) {
-        outb(0x3F8, u8(*s++));
+        outb(0x3f8, u8(*s++));
     }
 }
 
