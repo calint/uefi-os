@@ -135,6 +135,29 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     return true;
 }
 
+static auto init_gdt() -> void {
+    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
+                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
+                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
+
+    auto descriptor =
+        GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
+
+    asm volatile("lgdt %0\n\t"
+                 "mov $0x10, %%ax\n\t"
+                 "mov %%ax, %%ds\n\t"
+                 "mov %%ax, %%es\n\t"
+                 "mov %%ax, %%ss\n\t"
+                 "pushq $0x08\n\t"
+                 "lea 1f(%%rip), %%rax\n\t"
+                 "pushq %%rax\n\t"
+                 "lretq\n\t"
+                 "1:\n\t"
+                 :
+                 : "m"(descriptor)
+                 : "rax", "memory");
+}
+
 static auto init_paging() -> void {
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
@@ -309,14 +332,8 @@ extern "C" auto kernel_on_timer() -> void {
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
 
-    // default global descriptor table
-    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
-                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
-                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
-    auto gdt_desc = GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
-
-    serial_print("kernel_load_gdt\n");
-    kernel_load_gdt(&gdt_desc);
+    serial_print("init_gdt\n");
+    init_gdt();
 
     serial_print("init_paging\n");
     init_paging();
