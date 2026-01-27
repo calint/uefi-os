@@ -249,7 +249,7 @@ static auto init_keyboard_hardware() -> void {
             }
         }
         // small delay to prevent hammering the bus too hard
-        __asm__ volatile("pause");
+        asm volatile("pause");
     }
 }
 
