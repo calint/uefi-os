@@ -9,26 +9,6 @@ MemoryMap memory_map;
 KeyboardConfig keyboard_config;
 Heap heap;
 
-struct [[gnu::packed]] GDTDescriptor {
-    u16 size;
-    u64 offset;
-};
-
-struct [[gnu::packed]] GDTEntry {
-    u16 limit_low;
-    u16 base_low;
-    u8 base_middle;
-    u8 access;
-    u8 granularity;
-    u8 base_high;
-};
-
-struct [[gnu::packed]] GDT {
-    GDTEntry null;
-    GDTEntry code;
-    GDTEntry data;
-};
-
 extern "C" void* memset(void* s, int c, unsigned long n) {
     auto p = static_cast<unsigned char*>(s);
     while (n--) {
@@ -37,7 +17,7 @@ extern "C" void* memset(void* s, int c, unsigned long n) {
     return s;
 }
 
-extern "C" void* memcpy(void* dest, const void* src, u64 n) {
+extern "C" void* memcpy(void* dest, void const* src, u64 n) {
     auto d = static_cast<u8*>(dest);
     auto s = static_cast<u8 const*>(src);
     while (n--) {
@@ -131,9 +111,29 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
 }
 
 static auto init_gdt() -> void {
+    struct [[gnu::packed]] GDTEntry {
+        u16 limit_low;
+        u16 base_low;
+        u8 base_middle;
+        u8 access;
+        u8 granularity;
+        u8 base_high;
+    };
+
+    struct [[gnu::packed]] GDT {
+        GDTEntry null;
+        GDTEntry code;
+        GDTEntry data;
+    };
+
     alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
                                      .code = {0, 0, 0, 0x9a, 0x20, 0},
                                      .data = {0, 0, 0, 0x92, 0x00, 0}};
+
+    struct [[gnu::packed]] GDTDescriptor {
+        u16 size;
+        u64 offset;
+    };
 
     auto descriptor =
         GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
