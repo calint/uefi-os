@@ -53,20 +53,20 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
         *di = 0x00000022;
         ++di;
     }
-    print_string(20, 20, 0x00FFFF00, "OSCA x64", 3);
+    print_string(20, 20, 0x00ffff00, "osca x64", 3);
     u64 const kernel_addr = u64(kernel_start);
-    print_string(20, 30, 0xffffffff, "KERNEL: ", 3);
-    print_hex(100, 30, 0xFFFFFFFF, kernel_addr, 3);
-    print_string(20, 40, 0xffffffff, "FRAMEBUF: ", 3);
-    print_hex(100, 40, 0xFFFFFFFF, u64(frame_buffer.pixels), 3);
-    volatile u32* lapic = reinterpret_cast<u32*>(0xFEE00000);
+    print_string(20, 30, 0xffffffff, "kernel: ", 3);
+    print_hex(100, 30, 0xffffffff, kernel_addr, 3);
+    print_string(20, 40, 0xffffffff, "framebuf: ", 3);
+    print_hex(100, 40, 0xffffffff, u64(frame_buffer.pixels), 3);
+    volatile u32* lapic = reinterpret_cast<u32*>(0xfee00000);
     u32 const lapic_id =
-        (lapic[0x020 / 4] >> 24) & 0xFF; // Local APIC ID Register
-    print_string(20, 50, 0xffffffff, "LAPIC ID: ", 3);
+        (lapic[0x020 / 4] >> 24) & 0xff; // local apic id register
+    print_string(20, 50, 0xffffffff, "lapic id: ", 3);
     print_hex(100, 50, 0xffffffff, lapic_id, 3);
-    print_string(20, 60, 0xffffffff, "KEYB GSI: ", 3);
+    print_string(20, 60, 0xffffffff, "keyb gsi: ", 3);
     print_hex(100, 60, 0xffffffff, keyboard_config.gsi, 3);
-    print_string(20, 70, 0xffffffff, "KEYB FLGS: ", 3);
+    print_string(20, 70, 0xffffffff, "keyb flgs: ", 3);
     print_hex(100, 70, 0xffffffff, keyboard_config.flags, 3);
 
     while (true) {
