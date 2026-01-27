@@ -110,7 +110,7 @@ static auto get_next_table(u64* table, u64 index) -> u64* {
     return reinterpret_cast<u64*>(table[index] & ~0xfffull);
 }
 
-static auto map_range(u64 phys, u64 size, u64 flags) -> void {
+static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     u64 const end = phys + size;
     // map in 2MB chunks
     for (u64 addr = phys; addr < end; addr += 0x20'0000) {
@@ -120,17 +120,18 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> void {
 
         u64* pdp = get_next_table(boot_pml4, pml4_idx);
         if (pdp == nullptr) {
-            return;
+            return false;
         }
 
         u64* pd = get_next_table(pdp, pdp_idx);
         if (pd == nullptr) {
-            return;
+            return false;
         }
 
         // 0x80 is the "Huge Page" bit for 2MB entries in the Page Directory
         pd[pd_idx] = addr | flags | 0x80;
     }
+    return true;
 }
 
 static auto init_paging() -> void {
