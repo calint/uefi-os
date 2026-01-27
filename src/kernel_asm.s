@@ -21,10 +21,9 @@
     push %r15
 
     # create space for FXSAVE (512 bytes, 16-byte aligned)
+    # note: stack is now 16 bytes aligned (40 hardware + 15 register * 8)
     sub $512, %rsp
     fxsave (%rsp)
-    # align stack to 16 bytes for C++ calling convention
-    # (hardware (40) + GPRs (120) + FXSAVE (512) = 672 bytes. 672 % 16 == 0)
 .endm
 
 .macro POP_ALL
