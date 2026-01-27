@@ -142,6 +142,11 @@ static auto init_gdt() -> void {
 }
 
 static auto init_paging() -> void {
+    // save heap start before allocating pages
+    auto heap_start = u64(heap.start);
+    auto heap_size = heap.size;
+
+    // map uefi allocated memory
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
@@ -171,7 +176,7 @@ static auto init_paging() -> void {
     map_range(fb_base, fb_size, 3);
 
     serial_print("* heap\n");
-    map_range(u64(heap.start), heap.size, 3);
+    map_range(heap_start, heap_size, 3);
 
     // load CR3 to activate the dynamic tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
@@ -317,7 +322,7 @@ extern "C" auto kernel_on_timer() -> void {
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
-                 : "r"(stack), "r"(osca)
+                 : "r"(&stack[sizeof(stack)]), "r"(osca)
                  : "memory");
 
     __builtin_unreachable();
