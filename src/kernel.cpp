@@ -301,10 +301,12 @@ extern "C" auto kernel_on_timer() -> void {
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
 
-    alignas(8) static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
-                              .code = {0, 0, 0, 0x9A, 0x20, 0},
-                              .data = {0, 0, 0, 0x92, 0x00, 0}};
+    // default global descriptor table
+    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
+                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
+                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
     auto gdt_desc = GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
+
     serial_print("kernel_load_gdt\r\n");
     kernel_load_gdt(&gdt_desc);
 
@@ -323,7 +325,7 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     serial_print("init_keyboard_hardware\r\n");
     init_keyboard_hardware();
 
-    serial_print("osca_start\r\n");
     auto stack_top = u64(kernel_stack) + sizeof(kernel_stack);
+    serial_print("osca_start\r\n");
     osca_start(stack_top, osca);
 }
