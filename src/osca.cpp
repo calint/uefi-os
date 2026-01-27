@@ -59,6 +59,10 @@ auto print_hex(u32 x, u32 y, u32 color, u64 val, u32 scale = 1) -> void {
         (lapic[0x020 / 4] >> 24) & 0xFF; // Local APIC ID Register
     print_string(20, 80, 0x00FF00FF, "LAPIC ID: ", 3);
     print_hex(100, 80, 0x00FF00FF, lapic_id, 3);
+    print_string(20, 100, 0x00FF00FF, "KEYB GSI: ", 3);
+    print_hex(100, 100, 0x00FF00FF, keyboard_config.gsi, 3);
+    print_string(20, 120, 0x00FF00FF, "KEYB FLGS: ", 3);
+    print_hex(100, 120, 0x00FF00FF, keyboard_config.flags, 3);
 
     while (true) {
         __asm__("hlt");

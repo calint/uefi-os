@@ -6,6 +6,7 @@ alignas(16) static u8 kernel_stack[16384];
 
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
+KeyboardConfig keyboard_config;
 Heap heap;
 
 struct [[gnu::packed]] GDTDescriptor {
@@ -218,14 +219,8 @@ static auto io_apic_write(u32 reg, u32 val) -> void {
 static auto init_io_apic() -> void {
     u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
 
-    // irq 1 is the standard ps/2 keyboard pin.
-    // 0x8e attribute in idt handles the gate, here we just set the vector.
-    u32 const kbd_vector = 33;
-    // polarity (13): active high, trigger mode (15): level
-    u32 const kbd_flags = kbd_vector | (0 << 13) | (1 << 15);
-
-    io_apic_write(0x10 + 1 * 2, kbd_flags);
-    io_apic_write(0x10 + 1 * 2 + 1, cpu_id << 24);
+    io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
+    io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 }
 
 static auto init_keyboard_hardware() -> void {
@@ -298,11 +293,12 @@ extern "C" auto kernel_on_timer() -> void {
     lapic[0x0B0 / 4] = 0;
 }
 
-extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map)
-    -> void {
+extern "C" [[noreturn]] auto kernel_init(FrameBuffer fb, MemoryMap map,
+                                         KeyboardConfig keyb) -> void {
 
     frame_buffer = fb;
     memory_map = map;
+    keyboard_config = keyb;
     heap = make_heap();
 
     serial_print("kernel_load_gdt\r\n");

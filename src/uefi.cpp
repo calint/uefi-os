@@ -1,7 +1,14 @@
 #include <efi.h>
 
+#include "acpi.hpp"
 #include "efiprot.h"
 #include "kernel.hpp"
+
+static bool GuidsEqual(const EFI_GUID* g1, const EFI_GUID* g2) {
+    const u64* p1 = reinterpret_cast<const u64*>(g1);
+    const u64* p2 = reinterpret_cast<const u64*>(g2);
+    return (p1[0] == p2[0]) && (p1[1] == p2[1]);
+}
 
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
@@ -19,6 +26,62 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
+    // make keyboard config
+    RSDP* rsdp = nullptr;
+    EFI_GUID acpi_20_guid = ACPI_20_TABLE_GUID;
+    for (UINTN i = 0; i < sys->NumberOfTableEntries; ++i) {
+        if (GuidsEqual(&sys->ConfigurationTable[i].VendorGuid, &acpi_20_guid)) {
+            rsdp =
+                reinterpret_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
+            break;
+        }
+    }
+
+    serial_print("rsdp: ");
+    serial_print_hex(u64(rsdp));
+    serial_print("\r\n");
+
+    auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
+
+    // calculate number of pointers in XSDT
+    u32 entries = (xsdt->length - sizeof(SDTHeader)) / 8;
+    u64* table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
+
+    u32 kbd_gsi = 1;   // default to Pin 1
+    u32 kbd_flags = 0; // default active high, edge
+
+    for (u32 i = 0; i < entries; ++i) {
+        auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
+        if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
+            header->signature[2] == 'I' && header->signature[3] == 'C') {
+
+            auto madt = reinterpret_cast<MADT*>(header);
+            u8* p = madt->entries;
+            u8* end = reinterpret_cast<u8*>(madt) + madt->header.length;
+
+            while (p < end) {
+                auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
+                if (entry->type == 2) { // ISO
+                    auto iso = reinterpret_cast<MADT_ISO*>(p);
+                    if (iso->source == 1) { // keyboard
+                        serial_print("uefi: found keyboard config");
+                        kbd_gsi = iso->gsi;
+                        // polarity: 3 = active low
+                        if ((iso->flags & 0x3) == 0x3) {
+                            kbd_flags |= (1 << 13);
+                        }
+                        // trigger: 3 = level
+                        if (((iso->flags >> 2) & 0x3) == 0x3) {
+                            kbd_flags |= (1 << 15);
+                        }
+                    }
+                }
+                p += entry->length;
+            }
+        }
+    }
+
+    // make memory map
     UINTN size = 0;
     UINTN key = 0;
     UINTN d_size = 0;
@@ -51,7 +114,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 {.buffer = reinterpret_cast<void*>(map),
                  .size = size,
                  .descriptor_size = d_size,
-                 .descriptor_version = d_ver});
+                 .descriptor_version = d_ver},
+                {.gsi = kbd_gsi, .flags = kbd_flags});
 
     return EFI_SUCCESS;
 }

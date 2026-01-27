@@ -23,6 +23,11 @@ typedef struct MemoryMap {
     u32 descriptor_version;
 } MemoryMap;
 
+typedef struct KeyboardConfig {
+    u32 gsi;
+    u32 flags;
+} KeyboardConfig;
+
 typedef struct Heap {
     void* start;
     u64 size;
@@ -30,6 +35,7 @@ typedef struct Heap {
 
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
+extern KeyboardConfig keyboard_config;
 extern Heap heap;
 
 inline void outb(u16 port, u8 val) {
@@ -62,6 +68,7 @@ inline void serial_print_hex_byte(u8 val) {
     }
 }
 
-extern "C" [[noreturn]] auto kernel_init(FrameBuffer, MemoryMap) -> void;
+extern "C" [[noreturn]] auto kernel_init(FrameBuffer, MemoryMap, KeyboardConfig)
+    -> void;
 
 [[noreturn]] auto osca() -> void;

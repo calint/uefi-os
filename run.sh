@@ -9,7 +9,7 @@ WARNINGS="-Weverything -Wno-c++98-compat -Wno-reserved-macro-identifier \
     -Wno-unsafe-buffer-usage -Wno-pre-c++20-compat-pedantic \
     -Wno-missing-prototypes -Wno-padded -Wno-c++98-compat-pedantic \
     -Wno-language-extension-token -Wno-undef -Wno-unused-variable \
-    -Wno-unused-function"
+    -Wno-unused-function -Wno-c99-extensions"
 
 clang++ -std=c++26 -target x86_64-unknown-windows-msvc \
     -ffreestanding -fno-stack-protector -mno-red-zone \
