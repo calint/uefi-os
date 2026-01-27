@@ -2,6 +2,7 @@
 
 #include "acpi.hpp"
 #include "kernel.hpp"
+#include "x86_64/efibind.h"
 
 static auto guids_equal(const EFI_GUID* g1, const EFI_GUID* g2) -> bool {
     const u64* p1 = reinterpret_cast<const u64*>(g1);
@@ -15,10 +16,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     serial_print("efi_main\r\n");
 
     auto bs = sys->BootServices;
-
-    EFI_GUID graphics_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
-    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
-
+    auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
+    auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
                            reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
         serial_print("failed to get frame buffer\r\n");
@@ -31,9 +30,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     .stride = gop->Mode->Info->PixelsPerScanLine};
 
     // make keyboard config
-    RSDP* rsdp = nullptr;
-    EFI_GUID acpi_20_guid = ACPI_20_TABLE_GUID;
-    for (UINTN i = 0; i < sys->NumberOfTableEntries; ++i) {
+    auto rsdp = static_cast<RSDP*>(nullptr);
+    auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
+    for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
         if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
                         &acpi_20_guid)) {
             rsdp =
@@ -49,20 +48,20 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
 
     // calculate number of pointers in XSDT
-    u32 entries = (xsdt->length - sizeof(SDTHeader)) / 8;
-    u64* table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
+    auto entries = (xsdt->length - sizeof(SDTHeader)) / 8;
+    auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
 
-    u32 kbd_gsi = 1;   // default to Pin 1
-    u32 kbd_flags = 0; // default active high, edge
+    auto kbd_gsi = 1u;   // default to Pin 1
+    auto kbd_flags = 0u; // default active high, edge
 
-    for (u32 i = 0; i < entries; ++i) {
+    for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
             auto madt = reinterpret_cast<MADT*>(header);
-            u8* p = madt->entries;
-            u8* end = reinterpret_cast<u8*>(madt) + madt->header.length;
+            auto p = madt->entries;
+            auto end = reinterpret_cast<u8*>(madt) + madt->header.length;
 
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
@@ -88,11 +87,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     keyboard_config = {.gsi = kbd_gsi, .flags = kbd_flags};
 
     // make memory map
-    UINTN size = 0;
-    UINTN key = 0;
-    UINTN d_size = 0;
-    UINT32 d_ver = 0;
-    EFI_MEMORY_DESCRIPTOR* map = nullptr;
+    auto size = UINTN(0);
+    auto key = UINTN(0);
+    auto d_size = UINTN(0);
+    auto d_ver = UINT32(0);
+    auto map = static_cast<EFI_MEMORY_DESCRIPTOR*>(nullptr);
 
     bs->GetMemoryMap(&size, nullptr, &key, &d_size, &d_ver);
     size += 2 * d_size;

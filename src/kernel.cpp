@@ -39,7 +39,7 @@ extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
     -> void;
 
 extern "C" void* memset(void* s, int c, unsigned long n) {
-    unsigned char* p = reinterpret_cast<unsigned char*>(s);
+    auto p = reinterpret_cast<unsigned char*>(s);
     while (n--) {
         *p++ = static_cast<unsigned char>(c);
     }
@@ -47,32 +47,27 @@ extern "C" void* memset(void* s, int c, unsigned long n) {
 }
 
 extern "C" void* memcpy(void* dest, const void* src, u64 n) {
-    u8* d = reinterpret_cast<u8*>(dest);
-    const u8* s = reinterpret_cast<const u8*>(src);
-
+    auto d = reinterpret_cast<u8*>(dest);
+    auto s = reinterpret_cast<u8 const*>(src);
     while (n--) {
         *d++ = *s++;
     }
-
     return dest;
 }
 
 static auto make_heap() -> Heap {
     Heap result{};
-
     auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-
-    u64 num_descriptors = memory_map.size / memory_map.descriptor_size;
-
-    for (u64 i = 0; i < num_descriptors; ++i) {
+    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    for (auto i = 0u; i < num_descriptors; ++i) {
         auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
             u64(desc) + (i * memory_map.descriptor_size));
 
         if (d->Type == EfiConventionalMemory) {
-            u64 chunk_start = d->PhysicalStart;
-            u64 chunk_size = d->NumberOfPages * 4096;
+            auto chunk_start = d->PhysicalStart;
+            auto chunk_size = d->NumberOfPages * 4096;
             if (chunk_size > result.size) {
-                u64 aligned_start = (chunk_start + 4095) & ~4095ull;
+                auto aligned_start = (chunk_start + 4095) & ~4095ull;
                 result.start = reinterpret_cast<void*>(aligned_start);
                 result.size = chunk_size;
             }
@@ -87,7 +82,7 @@ static auto allocate_page() -> void* {
         serial_print("error: out of memory for paging\r\n");
         return nullptr;
     }
-    void* ptr = heap.start;
+    auto ptr = heap.start;
     heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
     heap.size -= 4096;
     memset(ptr, 0, 4096);
@@ -100,7 +95,7 @@ alignas(4096) static u64 boot_pml4[512];
 static auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) {
         // entry is not present
-        void* next = allocate_page();
+        auto next = allocate_page();
         if (next == nullptr) {
             return nullptr;
         }
@@ -112,24 +107,27 @@ static auto get_next_table(u64* table, u64 index) -> u64* {
 }
 
 static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
-    u64 const end = phys + size;
-    // map in 2MB chunks
-    for (u64 addr = phys; addr < end; addr += 0x20'0000) {
-        u64 pml4_idx = (addr >> 39) & 0x1ff;
-        u64 pdp_idx = (addr >> 30) & 0x1ff;
-        u64 pd_idx = (addr >> 21) & 0x1ff;
+    // align to 2MB
+    auto start = phys & ~0x1f'ffffull;
+    auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
 
-        u64* pdp = get_next_table(boot_pml4, pml4_idx);
+    // map in 2MB chunks
+    for (auto addr = start; addr < end; addr += 0x20'0000) {
+        auto pml4_idx = (addr >> 39) & 0x1ff;
+        auto pdp_idx = (addr >> 30) & 0x1ff;
+        auto pd_idx = (addr >> 21) & 0x1ff;
+
+        auto pdp = get_next_table(boot_pml4, pml4_idx);
         if (pdp == nullptr) {
             return false;
         }
 
-        u64* pd = get_next_table(pdp, pdp_idx);
+        auto pd = get_next_table(pdp, pdp_idx);
         if (pd == nullptr) {
             return false;
         }
 
-        // 0x80 is the "Huge Page" bit for 2MB entries in the Page Directory
+        // 0x80 is the "huge page" bit for 2mb entries in the page directory
         pd[pd_idx] = addr | flags | 0x80;
     }
     return true;
@@ -140,12 +138,9 @@ static auto init_paging() -> void {
     map_range(0, 0x2'0000'0000ull, 0x03);
 
     // map the framebuffer
-    u64 const fb_base = u64(frame_buffer.pixels);
-    u64 const fb_size = u64(frame_buffer.stride) * frame_buffer.height * 4;
-    // align start/end to 2MB boundaries for our huge-page mapper
-    u64 const fb_start = fb_base & ~0x1f'ffffull;
-    u64 const fb_end = (fb_base + fb_size + 0x1f'ffffull) & ~0x1'fffffull;
-    map_range(fb_start, fb_end - fb_start, 0x03);
+    auto fb_base = u64(frame_buffer.pixels);
+    auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
+    map_range(fb_base, fb_size, 0x03);
 
     // map APIC regions (typically 0xffc0'0000 and 0xfee0'0000)
     // using cache disable (0x10) and write hhrough (0x08)
@@ -154,9 +149,9 @@ static auto init_paging() -> void {
 
     // map ACPI reclaim and NVS regions from the UEFI Memory Map
     // this ensures RSDP/XSDT/MADT are accessible even if above 8GB
-    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-    u64 num_descriptors = memory_map.size / memory_map.descriptor_size;
-    for (u64 i = 0; i < num_descriptors; ++i) {
+    auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    for (auto i = 0u; i < num_descriptors; ++i) {
         auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
             u64(desc) + (i * memory_map.descriptor_size));
 
@@ -164,10 +159,7 @@ static auto init_paging() -> void {
         // ACPI NVS contains data the OS must preserve
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
-            // align to 2MB
-            u64 start = d->PhysicalStart & ~0x1f'ffffull;
-            u64 size = (d->NumberOfPages * 4096 + 0x1f'ffffull) & ~0x1f'ffffull;
-            map_range(start, size, 0x03);
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 0x03);
         }
     }
 
@@ -192,7 +184,7 @@ struct [[gnu::packed]] IDTR {
 
 alignas(16) static IDTEntry idt[256];
 
-static volatile u32* lapic = reinterpret_cast<u32*>(0xfee0'0000);
+static auto volatile lapic = reinterpret_cast<u32*>(0xfee0'0000);
 
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
@@ -207,13 +199,13 @@ auto calibrate_apic(u32 hz) -> u32 {
     lapic[0x380 / 4] = 0xffff'ffff; // max count
 
     // wait for pit to finish
-    u8 status = 0;
+    auto status = 0;
     while (!(status & 0x80)) {
         outb(0x43, 0xe2); // read back command
         status = inb(0x40);
     }
 
-    u32 ticks_per_10ms = 0xffff'ffff - lapic[0x390 / 4]; // current count reg
+    auto ticks_per_10ms = 0xffff'ffff - lapic[0x390 / 4]; // current count reg
 
     return ticks_per_10ms * 100 / hz;
 }
@@ -230,13 +222,13 @@ static auto init_apic_timer() -> void {
 }
 
 static auto io_apic_write(u32 reg, u32 val) -> void {
-    volatile u32* io_apic = reinterpret_cast<u32*>(0xfec0'0000);
+    auto volatile io_apic = reinterpret_cast<u32*>(0xfec0'0000);
     io_apic[0] = reg; // select register
     io_apic[4] = val; // write value
 }
 
 static auto init_io_apic() -> void {
-    u32 const cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
+    auto cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
 
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
@@ -256,7 +248,7 @@ static auto init_keyboard_hardware() -> void {
     outb(0x60, 0xf4);
 
     // wait for ACK (0xfa)
-    for (u32 i = 0; i < 1'000'000; ++i) { // larger timeout for slow hardware
+    for (auto i = 0u; i < 1'000'000; ++i) { // larger timeout for slow hardware
         // check if there is data to read
         if (inb(0x64) & 0x01) {
             if (inb(0x60) == 0xfa) {
@@ -274,25 +266,24 @@ extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 static auto init_idt() -> void {
     // set idt entry 32 (timer)
-    u64 apic_addr = u64(kernel_asm_timer_handler);
+    auto apic_addr = u64(kernel_asm_timer_handler);
     idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                u32(apic_addr >> 32), 0};
 
     // set idt entry 33 (keyboard)
-    u64 kbd_addr = u64(kernel_asm_keyboard_handler);
+    auto kbd_addr = u64(kernel_asm_keyboard_handler);
     idt[33] = {u16(kbd_addr),       0x08, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 
-    IDTR idtr = {sizeof(idt) - 1, u64(idt)};
+    auto idtr = IDTR{sizeof(idt) - 1, u64(idt)};
     asm volatile("lidt %0" : : "m"(idtr));
 }
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
-
 extern "C" auto kernel_on_keyboard() -> void {
     // read all pending scancodes from the controller
     while (inb(0x64) & 0x01) {
-        u8 scancode = inb(0x60);
+        auto scancode = inb(0x60);
         serial_print("|");
         serial_print_hex_byte(scancode);
         serial_print("|");
@@ -304,7 +295,6 @@ extern "C" auto kernel_on_keyboard() -> void {
 }
 
 extern "C" auto osca_on_timer() -> void;
-
 extern "C" auto kernel_on_timer() -> void {
     osca_on_timer();
 
@@ -338,6 +328,6 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     asm volatile("sti");
 
     serial_print("osca_start\r\n");
-    u64 stack_top = u64(kernel_stack) + sizeof(kernel_stack);
+    auto stack_top = u64(kernel_stack) + sizeof(kernel_stack);
     osca_start(stack_top, osca);
 }
