@@ -250,17 +250,17 @@ static auto init_keyboard_hardware() -> void {
 }
 
 // assembler functions
-extern "C" auto kernel_timer_handler() -> void;
-extern "C" auto kernel_keyboard_handler() -> void;
+extern "C" auto kernel_asm_timer_handler() -> void;
+extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 static auto init_idt() -> void {
     // set idt entry 32 (timer)
-    u64 apic_addr = u64(kernel_timer_handler);
+    u64 apic_addr = u64(kernel_asm_timer_handler);
     idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                u32(apic_addr >> 32), 0};
 
     // set idt entry 33 (keyboard)
-    u64 kbd_addr = u64(kernel_keyboard_handler);
+    u64 kbd_addr = u64(kernel_asm_keyboard_handler);
     idt[33] = {u16(kbd_addr),       0x08, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 

@@ -1,6 +1,6 @@
 .global kernel_load_gdt
-.global kernel_timer_handler
-.global kernel_keyboard_handler
+.global kernel_asm_timer_handler
+.global kernel_asm_keyboard_handler
 .global osca_start
 
 .macro PUSH_ALL
@@ -50,6 +50,8 @@
 
 kernel_load_gdt:
     lgdt (%RCX)              # rcx has descriptor address
+
+    // RAX is a "Caller-Saved" Register
     mov $0x10, %AX           # data segment
     mov %AX, %DS
     mov %AX, %ES
@@ -71,14 +73,14 @@ osca_start:
     # jump to the target function manually
     jmp *%RDX
 
-kernel_timer_handler:
+kernel_asm_timer_handler:
     PUSH_ALL
     cld
     call kernel_on_timer
     POP_ALL
     iretq
 
-kernel_keyboard_handler:
+kernel_asm_keyboard_handler:
     PUSH_ALL
     cld
     call kernel_on_keyboard
