@@ -1,5 +1,6 @@
 #include <efi.h>
 
+#include "efidef.h"
 #include "kernel.hpp"
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
@@ -162,6 +163,9 @@ static auto init_paging() -> void {
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData)) {
             serial_print("* loaded kernel\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+            // } else if (d->Type == EfiConventionalMemory) {
+            //     serial_print("* memory\n");
+            //     map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 0x1B);
