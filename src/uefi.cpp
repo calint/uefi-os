@@ -13,14 +13,14 @@ static auto guids_equal(const EFI_GUID* g1, const EFI_GUID* g2) -> bool {
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
-    serial_print("efi_main\r\n");
+    serial_print("efi_main\n");
 
     auto bs = sys->BootServices;
     auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
     auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
                            reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
-        serial_print("failed to get frame buffer\r\n");
+        serial_print("failed to get frame buffer\n");
         return EFI_ABORTED;
     }
     frame_buffer = {.pixels =
@@ -43,7 +43,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     serial_print("rsdp: ");
     serial_print_hex(u64(rsdp));
-    serial_print("\r\n");
+    serial_print("\n");
 
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
 
@@ -98,12 +98,12 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     if (bs->AllocatePool(EfiLoaderData, size, reinterpret_cast<void**>(&map)) !=
         EFI_SUCCESS) {
-        serial_print("failed to allocate pool\r\n");
+        serial_print("failed to allocate pool\n");
         return EFI_ABORTED;
     }
 
     if (bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver) != EFI_SUCCESS) {
-        serial_print("failed to get memory map\r\n");
+        serial_print("failed to get memory map\n");
         return EFI_ABORTED;
     }
     memory_map = {.buffer = reinterpret_cast<void*>(map),
@@ -112,7 +112,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                   .descriptor_version = d_ver};
 
     if (bs->ExitBootServices(img, key) != EFI_SUCCESS) {
-        serial_print("failed to exit boot service\r\n");
+        serial_print("failed to exit boot service\n");
         return EFI_ABORTED;
     }
 

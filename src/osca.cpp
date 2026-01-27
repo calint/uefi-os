@@ -44,7 +44,7 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
 }
 
 [[noreturn]] auto osca() -> void {
-    serial_print("osca x64 kernel is running\r\n");
+    serial_print("osca x64 kernel is running\n");
 
     auto di = frame_buffer.pixels;
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {

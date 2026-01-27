@@ -75,7 +75,7 @@ static auto make_heap() -> Heap {
 
 static auto allocate_page() -> void* {
     if (heap.size < 4096) {
-        serial_print("error: out of memory for paging\r\n");
+        serial_print("error: out of memory for paging\n");
         return nullptr;
     }
     auto ptr = heap.start;
@@ -315,25 +315,25 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
                                      .data = {0, 0, 0, 0x92, 0x00, 0}};
     auto gdt_desc = GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
 
-    serial_print("kernel_load_gdt\r\n");
+    serial_print("kernel_load_gdt\n");
     kernel_load_gdt(&gdt_desc);
 
-    serial_print("init_paging\r\n");
+    serial_print("init_paging\n");
     init_paging();
 
-    serial_print("init_idt\r\n");
+    serial_print("init_idt\n");
     init_idt();
 
-    serial_print("init_apic_timer\r\n");
+    serial_print("init_apic_timer\n");
     init_apic_timer();
 
-    serial_print("init_io_apic\r\n");
+    serial_print("init_io_apic\n");
     init_io_apic();
 
-    serial_print("init_keyboard_hardware\r\n");
+    serial_print("init_keyboard_hardware\n");
     init_keyboard_hardware();
 
     auto stack_top = u64(stack) + sizeof(stack);
-    serial_print("osca_start\r\n");
+    serial_print("osca_start\n");
     osca_start(stack_top, osca);
 }
