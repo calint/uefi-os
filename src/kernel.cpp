@@ -94,19 +94,20 @@ static auto allocate_page() -> void* {
     return ptr;
 }
 
-// Only the top-level PML4 remains as a static array
+// the top-level PML4 (512GB/entry) potentially covering 256 TB
 alignas(4096) static u64 boot_pml4[512];
 
 static auto get_next_table(u64* table, u64 index) -> u64* {
-    if (!(table[index] & 0x01)) { // If entry is not present
+    if (!(table[index] & 0x01)) {
+        // entry is not present
         void* next = allocate_page();
         if (next == nullptr) {
             return nullptr;
         }
         // set present (0x01) and writable (0x02)
-        table[index] = reinterpret_cast<u64>(next) | 0x03;
+        table[index] = u64(next) | 0x03;
     }
-    // Return the pointer by masking out the attribute bits
+    // return the pointer by masking out the attribute bits
     return reinterpret_cast<u64*>(table[index] & ~0xfffull);
 }
 
@@ -136,13 +137,11 @@ static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
 
 static auto init_paging() -> void {
     // identity map the first 8GB
-    // This covers the kernel (5GB), heap, and stack
     map_range(0, 0x2'0000'0000ull, 0x03);
 
-    // map the framebuffer dynamically
+    // map the framebuffer
     u64 const fb_base = u64(frame_buffer.pixels);
     u64 const fb_size = u64(frame_buffer.stride) * frame_buffer.height * 4;
-
     // align start/end to 2MB boundaries for our huge-page mapper
     u64 const fb_start = fb_base & ~0x1f'ffffull;
     u64 const fb_end = (fb_base + fb_size + 0x1f'ffffull) & ~0x1'fffffull;
@@ -165,7 +164,8 @@ static auto init_paging() -> void {
         // ACPI NVS contains data the OS must preserve
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
-            u64 start = d->PhysicalStart & ~0x1f'ffffull; // Align to 2MB
+            // align to 2MB
+            u64 start = d->PhysicalStart & ~0x1f'ffffull;
             u64 size = (d->NumberOfPages * 4096 + 0x1f'ffffull) & ~0x1f'ffffull;
             map_range(start, size, 0x03);
         }
