@@ -57,29 +57,29 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     u32 col_val = 12;
     u32 row = 2;
     print_string(col_lbl, row, 0x00ffff00, "osca x64", 3);
-    row++;
+    ++row;
     u64 const kernel_addr = u64(kernel_start);
     print_string(col_lbl, row, 0xffffffff, "kerneladdr: ", 3);
     print_hex(col_val, row, 0xffffffff, kernel_addr, 3);
-    row++;
+    ++row;
     print_string(col_lbl, row, 0xffffffff, "memmapaddr: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(memory_map.buffer), 3);
-    row++;
+    ++row;
     print_string(col_lbl, row, 0xffffffff, "frameaddr: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(frame_buffer.pixels), 3);
-    row++;
+    ++row;
     volatile u32* lapic = reinterpret_cast<u32*>(0xfee00000);
     u32 const lapic_id =
         (lapic[0x020 / 4] >> 24) & 0xff; // local apic id register
     print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
     print_hex(col_val, row, 0xffffffff, lapic_id, 3);
-    row++;
+    ++row;
     print_string(col_lbl, row, 0xffffffff, "keyb gsi: ", 3);
     print_hex(col_val, row, 0xffffffff, keyboard_config.gsi, 3);
-    row++;
+    ++row;
     print_string(col_lbl, row, 0xffffffff, "keyb flgs: ", 3);
     print_hex(col_val, row, 0xffffffff, keyboard_config.flags, 3);
-    row++;
+    ++row;
 
     while (true) {
         __asm__("hlt");
