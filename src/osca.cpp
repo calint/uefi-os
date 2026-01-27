@@ -1,19 +1,19 @@
 #include "ascii_font_8x8.hpp"
 #include "kernel.hpp"
 
-void draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) {
-    u32* fb = frame_buffer.pixels;
-    u32 const stride = frame_buffer.stride;
+auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
+    auto fb = frame_buffer.pixels;
+    auto stride = frame_buffer.stride;
     if (c < 32 || c > 126) {
         c = '?';
     }
-    u8 const* glyph = ASCII_FONT[u8(c)];
-    for (u8 i = 0; i < 8; ++i) {
-        for (u8 j = 0; j < 8; ++j) {
+    auto glyph = ASCII_FONT[u8(c)];
+    for (auto i = 0u; i < 8; ++i) {
+        for (auto j = 0u; j < 8; ++j) {
             if (glyph[i] & (1 << (7 - j))) {
-                // Draw a scale x scale block of pixels
-                for (u32 sy = 0; sy < scale; ++sy) {
-                    for (u32 sx = 0; sx < scale; ++sx) {
+                // draw a scale x scale block of pixels
+                for (auto sy = 0u; sy < scale; ++sy) {
+                    for (auto sx = 0u; sx < scale; ++sx) {
                         fb[(row * 8 * scale + (i * scale) + sy) * stride +
                            (col * 8 * scale + (j * scale) + sx)] = color;
                     }
@@ -24,15 +24,16 @@ void draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) {
 }
 
 // Update print_string to pass the scale
-void print_string(u32 col, u32 row, u32 color, char const* str, u32 scale = 1) {
-    for (u32 i = 0; str[i] != '\0'; ++i) {
+auto print_string(u32 col, u32 row, u32 color, char const* str, u32 scale = 1)
+    -> void {
+    for (auto i = 0u; str[i] != '\0'; ++i) {
         draw_char(col + i, row, color, str[i], scale);
     }
 }
 
 auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     constexpr char hex_chars[]{"0123456789ABCDEF"};
-    for (i8 i = 60; i >= 0; i -= 4) {
+    for (auto i = 60; i >= 0; i -= 4) {
         draw_char(col, row, color, hex_chars[(val >> i) & 0xf], scale);
         col++;
         if (i != 0 && (i % 16) == 0) {
@@ -48,17 +49,17 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     serial_print_hex(heap.size);
     serial_print("\r\n\r\n");
 
-    u32* di = frame_buffer.pixels;
-    for (u32 i = 0; i < frame_buffer.stride * frame_buffer.height; ++i) {
+    auto di = frame_buffer.pixels;
+    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         *di = 0x00000022;
         ++di;
     }
-    u32 col_lbl = 1;
-    u32 col_val = 12;
-    u32 row = 2;
+    auto col_lbl = 1u;
+    auto col_val = 12u;
+    auto row = 2u;
     print_string(col_lbl, row, 0x00ffff00, "osca x64", 3);
     ++row;
-    u64 const kernel_addr = u64(kernel_start);
+    auto kernel_addr = u64(kernel_start);
     print_string(col_lbl, row, 0xffffffff, "kerneladdr: ", 3);
     print_hex(col_val, row, 0xffffffff, kernel_addr, 3);
     ++row;
@@ -68,9 +69,8 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     print_string(col_lbl, row, 0xffffffff, "frameaddr: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(frame_buffer.pixels), 3);
     ++row;
-    volatile u32* lapic = reinterpret_cast<u32*>(0xfee00000);
-    u32 const lapic_id =
-        (lapic[0x020 / 4] >> 24) & 0xff; // local apic id register
+    volatile auto lapic = reinterpret_cast<u32*>(0xfee00000);
+    auto lapic_id = (lapic[0x020 / 4] >> 24) & 0xff; // local apic id register
     print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
     print_hex(col_val, row, 0xffffffff, lapic_id, 3);
     ++row;
@@ -81,8 +81,10 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     print_hex(col_val, row, 0xffffffff, keyboard_config.flags, 3);
     ++row;
 
+    interrupts_enable();
+
     while (true) {
-        __asm__("hlt");
+        asm("hlt");
     }
 }
 
@@ -92,21 +94,21 @@ extern "C" auto osca_on_timer() -> void {
     serial_print(".");
 
     ++tick;
-    for (u32 y = 0; y < 32; ++y) {
-        for (u32 x = 0; x < 32; ++x) {
+    for (auto y = 0u; y < 32; ++y) {
+        for (auto x = 0u; x < 32; ++x) {
             frame_buffer.pixels[y * frame_buffer.stride + x] = tick << 6;
         }
     }
 }
 
-static u64 kbd_intr_total = 0;
+static auto kbd_intr_total = 0ull;
 
 extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     kbd_intr_total++;
 
     // clear
-    for (u32 y = 20 * 8 * 3; y < 24 * 8 * 3; ++y) {
-        for (u32 x = 0; x < frame_buffer.width; ++x) {
+    for (auto y = 20 * 8 * 3u; y < 24 * 8 * 3; ++y) {
+        for (auto x = 0u; x < frame_buffer.width; ++x) {
             frame_buffer.pixels[y * frame_buffer.stride + x] = 0;
         }
     }
@@ -120,8 +122,8 @@ extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     print_hex(16, 21, 0x00FFFFFF, scancode, 3);
 
     // Keep your original color box but make it bigger
-    for (u32 y = 0; y < 32; ++y) {
-        for (u32 x = 32; x < 32 + 32; ++x) {
+    for (auto y = 0u; y < 32; ++y) {
+        for (auto x = 32u; x < 32 + 32; ++x) {
             frame_buffer.pixels[y * frame_buffer.stride + x] = u32(scancode)
                                                                << 16;
         }

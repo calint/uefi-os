@@ -29,10 +29,6 @@ struct [[gnu::packed]] GDT {
     GDTEntry data;
 };
 
-alignas(8) static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
-                          .code = {0, 0, 0, 0x9A, 0x20, 0},
-                          .data = {0, 0, 0, 0x92, 0x00, 0}};
-
 extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
 
 extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
@@ -272,7 +268,7 @@ static auto init_idt() -> void {
 
     // set idt entry 33 (keyboard)
     auto kbd_addr = u64(kernel_asm_keyboard_handler);
-    idt[33] = {u16(kbd_addr),       0x08, 0, 0x8e, u16(kbd_addr >> 16),
+    idt[33] = {u16(kbd_addr),       8, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 
     auto idtr = IDTR{sizeof(idt) - 1, u64(idt)};
@@ -303,11 +299,13 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 extern "C" [[noreturn]] auto kernel_start() -> void {
-
     heap = make_heap();
 
+    alignas(8) static GDT gdt{.null = {0, 0, 0, 0, 0, 0},
+                              .code = {0, 0, 0, 0x9A, 0x20, 0},
+                              .data = {0, 0, 0, 0x92, 0x00, 0}};
+    auto gdt_desc = GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
     serial_print("kernel_load_gdt\r\n");
-    GDTDescriptor gdt_desc{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
     kernel_load_gdt(&gdt_desc);
 
     serial_print("init_paging\r\n");
@@ -324,8 +322,6 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
 
     serial_print("init_keyboard_hardware\r\n");
     init_keyboard_hardware();
-
-    asm volatile("sti");
 
     serial_print("osca_start\r\n");
     auto stack_top = u64(kernel_stack) + sizeof(kernel_stack);
