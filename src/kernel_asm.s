@@ -1,7 +1,52 @@
 .global kernel_load_gdt
-.global kernel_apic_timer_handler
+.global kernel_timer_handler
 .global kernel_keyboard_handler
 .global osca_start
+
+.macro PUSH_ALL
+    push %rax
+    push %rbx
+    push %rcx
+    push %rdx
+    push %rbp
+    push %rsi
+    push %rdi
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    push %r12
+    push %r13
+    push %r14
+    push %r15
+
+    # create space for FXSAVE (512 bytes, 16-byte aligned)
+    sub $512, %rsp
+    fxsave (%rsp)
+    # align stack to 16 bytes for C++ calling convention
+    # (hardware (40) + GPRs (120) + FXSAVE (512) = 672 bytes. 672 % 16 == 0)
+.endm
+
+.macro POP_ALL
+    fxrstor (%rsp)
+    add $512, %rsp
+
+    pop %r15
+    pop %r14
+    pop %r13
+    pop %r12
+    pop %r11
+    pop %r10
+    pop %r9
+    pop %r8
+    pop %rdi
+    pop %rsi
+    pop %rbp
+    pop %rdx
+    pop %rcx
+    pop %rbx
+    pop %rax
+.endm
 
 kernel_load_gdt:
     lgdt (%RCX)              # rcx has descriptor address
@@ -26,62 +71,17 @@ osca_start:
     # jump to the target function manually
     jmp *%RDX
 
-kernel_apic_timer_handler:
-    push %RAX
-    push %RCX
-    push %RDX
-    push %RSI
-    push %RDI
-    push %R8
-    push %R9
-    push %R10
-    push %R11
-
-    cld                      # ensure string ops go forward
-
-    # stack alignment check: (5 hardware + 9 manual) = 14 qwords
-    # 14 * 8 = 112 bytes. 112 is not a multiple of 16.
-    sub $8, %RSP             # align stack to 16 bytes
+kernel_timer_handler:
+    PUSH_ALL
+    cld
     call kernel_on_timer
-    add $8, %RSP             # restore alignment
-
-    pop %R11
-    pop %R10
-    pop %R9
-    pop %R8
-    pop %RDI
-    pop %RSI
-    pop %RDX
-    pop %RCX
-    pop %RAX
+    POP_ALL
     iretq
 
 kernel_keyboard_handler:
-    push %RAX
-    push %RCX
-    push %RDX
-    push %RSI
-    push %RDI
-    push %R8
-    push %R9
-    push %R10
-    push %R11
-
-    cld                      # ensure string ops go forward
-
-    # stack alignment check: (5 hardware + 9 manual) = 14 qwords
-    # 14 * 8 = 112 bytes. 112 is not a multiple of 16.
-    sub $8, %RSP             # align stack to 16 bytes
+    PUSH_ALL
+    cld
     call kernel_on_keyboard
-    add $8, %RSP             # restore alignment
-
-    pop %R11
-    pop %R10
-    pop %R9
-    pop %R8
-    pop %RDI
-    pop %RSI
-    pop %RDX
-    pop %RCX
-    pop %RAX
+    POP_ALL
     iretq
+
