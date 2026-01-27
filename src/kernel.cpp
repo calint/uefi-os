@@ -29,11 +29,6 @@ struct [[gnu::packed]] GDT {
     GDTEntry data;
 };
 
-extern "C" auto kernel_load_gdt(GDTDescriptor* descriptor) -> void;
-
-extern "C" [[noreturn]] auto osca_start(u64 stack_top, void (*target)())
-    -> void;
-
 extern "C" void* memset(void* s, int c, unsigned long n) {
     auto p = static_cast<unsigned char*>(s);
     while (n--) {
