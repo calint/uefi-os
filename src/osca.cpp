@@ -114,12 +114,12 @@ extern "C" auto osca_on_keyboard(u8 scancode) -> void {
     }
 
     // Draw big "INTR" label and count
-    print_string(2, 20, 0x0000FF00, "KBD INTR: ", 3);
-    print_hex(16, 20, 0x0000FF00, kbd_intr_total, 3);
+    print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
+    print_hex(12, 20, 0x0000ff00, kbd_intr_total, 3);
 
-    // Draw the latest scancode extra large
-    print_string(2, 21, 0x00FFFFFF, "SCAN: ", 3);
-    print_hex(16, 21, 0x00FFFFFF, scancode, 3);
+    // draw the latest scancode extra large
+    print_string(1, 21, 0x00ffffff, "scancode: ", 3);
+    print_hex(12, 21, 0x00ffffff, scancode, 3);
 
     // Keep your original color box but make it bigger
     for (auto y = 0u; y < 32; ++y) {
