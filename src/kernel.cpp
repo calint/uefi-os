@@ -9,21 +9,9 @@ MemoryMap memory_map;
 KeyboardConfig keyboard_config;
 Heap heap;
 
-extern "C" void* memset(void* s, int c, unsigned long n) {
-    auto p = static_cast<unsigned char*>(s);
-    while (n--) {
-        *p++ = static_cast<unsigned char>(c);
-    }
+extern "C" auto memset(void* s, int c, u64 n) -> void* {
+    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
     return s;
-}
-
-extern "C" void* memcpy(void* dest, void const* src, u64 n) {
-    auto d = static_cast<u8*>(dest);
-    auto s = static_cast<u8 const*>(src);
-    while (n--) {
-        *d++ = *s++;
-    }
-    return dest;
 }
 
 static auto make_heap() -> Heap {
