@@ -152,6 +152,24 @@ static auto init_paging() -> void {
     map_range(0xfec0'0000, 0x20'0000, 0x1b);
     map_range(0xfee0'0000, 0x20'0000, 0x1b);
 
+    // map ACPI reclaim and NVS regions from the UEFI Memory Map
+    // this ensures RSDP/XSDT/MADT are accessible even if above 8GB
+    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    u64 num_descriptors = memory_map.size / memory_map.descriptor_size;
+    for (u64 i = 0; i < num_descriptors; ++i) {
+        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            u64(desc) + (i * memory_map.descriptor_size));
+
+        // ACPI Reclaim contains the tables (XSDT, MADT, etc.)
+        // ACPI NVS contains data the OS must preserve
+        if ((d->Type == EfiACPIReclaimMemory) ||
+            (d->Type == EfiACPIMemoryNVS)) {
+            u64 start = d->PhysicalStart & ~0x1f'ffffull; // Align to 2MB
+            u64 size = (d->NumberOfPages * 4096 + 0x1f'ffffull) & ~0x1f'ffffull;
+            map_range(start, size, 0x03);
+        }
+    }
+
     // load CR3 to activate the dynamic tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
