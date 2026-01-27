@@ -48,9 +48,6 @@ static auto allocate_page() -> void* {
     return ptr;
 }
 
-// the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) static u64 boot_pml4[512];
-
 static auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) {
         // entry is not present
@@ -64,6 +61,9 @@ static auto get_next_table(u64* table, u64 index) -> u64* {
     // return the pointer by masking out the attribute bits
     return reinterpret_cast<u64*>(table[index] & ~0xfffull);
 }
+
+// the top-level PML4 (512GB/entry) potentially covering 256 TB
+alignas(4096) static u64 boot_pml4[512];
 
 static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     // align to 2MB
@@ -177,23 +177,6 @@ static auto init_paging() -> void {
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
-struct [[gnu::packed]] IDTEntry {
-    u16 low;
-    u16 sel;
-    u8 ist;
-    u8 attr;
-    u16 mid;
-    u32 high;
-    u32 res;
-};
-
-struct [[gnu::packed]] IDTR {
-    u16 limit;
-    u64 base;
-};
-
-alignas(16) static IDTEntry idt[256];
-
 static auto volatile lapic = reinterpret_cast<u32*>(0xfee0'0000);
 
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
@@ -275,6 +258,18 @@ extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 static auto init_idt() -> void {
+    struct [[gnu::packed]] IDTEntry {
+        u16 low;
+        u16 sel;
+        u8 ist;
+        u8 attr;
+        u16 mid;
+        u32 high;
+        u32 res;
+    };
+
+    alignas(16) static IDTEntry idt[256];
+
     // set idt entry 32 (timer)
     auto apic_addr = u64(kernel_asm_timer_handler);
     idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
@@ -284,6 +279,11 @@ static auto init_idt() -> void {
     auto kbd_addr = u64(kernel_asm_keyboard_handler);
     idt[33] = {u16(kbd_addr),       8, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
+
+    struct [[gnu::packed]] IDTR {
+        u16 limit;
+        u64 base;
+    };
 
     auto idtr = IDTR{sizeof(idt) - 1, u64(idt)};
     asm volatile("lidt %0" : : "m"(idtr));
