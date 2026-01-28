@@ -1,2 +1,4 @@
-[ ] keyboard interrupt
-[ ] timer interrupt
+[ ] map exceptions interrupts
+[ ] handle spurious interrupts
+[x] keyboard interrupt
+[x] timer interrupt
