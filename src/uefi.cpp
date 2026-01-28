@@ -16,6 +16,15 @@ static inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
+auto static validate_sdt_checksum(SDTHeader* header) -> bool {
+    u8 sum = 0;
+    auto bytes = reinterpret_cast<u8*>(header);
+    for (u32 i = 0; i < header->length; i++) {
+        sum += bytes[i];
+    }
+    return sum == 0;
+}
+
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
@@ -63,6 +72,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
 
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
+    if (!validate_sdt_checksum(xsdt)) {
+        serial_print("abort: XSDT checksum failed\n");
+        return EFI_ABORTED;
+    }
     if (xsdt->length < sizeof(SDTHeader) ||
         ((xsdt->length - sizeof(SDTHeader)) & 7) != 0) {
         serial_print("abort: invalid XSDT length");
@@ -88,6 +101,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
+        if (!validate_sdt_checksum(xsdt)) {
+            serial_print("abort: XSDT checksum failed\n");
+            return EFI_ABORTED;
+        }
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
