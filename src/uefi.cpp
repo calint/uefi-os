@@ -16,6 +16,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     serial_print("efi_main\n");
 
     auto bs = sys->BootServices;
+
+    //
+    // get frame buffer config
+    //
     auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
     auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
@@ -29,7 +33,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     .height = gop->Mode->Info->VerticalResolution,
                     .stride = gop->Mode->Info->PixelsPerScanLine};
 
-    // make keyboard config, lapic and io apic addresses
+    //
+    // get keyboard config, io_apic and lapic pointers
+    //
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -41,23 +47,21 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         }
     }
 
-    serial_print("rsdp: ");
-    serial_print_hex(u64(rsdp));
-    serial_print("\n");
-
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
 
     // calculate number of pointers in XSDT
     auto entries = (xsdt->length - sizeof(SDTHeader)) / 8;
     auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
 
+    // default keyboard config
     auto kbd_gsi = 1u;   // default to Pin 1
     auto kbd_flags = 0u; // default active high, edge
 
-    // initiate io_apic and lapic
-    // default values
+    // default io_apic and apic config
     io_apic = reinterpret_cast<u32 volatile*>(0xfec00000);
     lapic = reinterpret_cast<u32 volatile*>(0xfee00000);
+
+    // find override values
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
@@ -96,7 +100,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
     keyboard_config = {.gsi = kbd_gsi, .flags = kbd_flags};
 
-    // make memory map
+    //
+    // get memory map and exit boot services
+    //
+
     auto size = UINTN(0);
     auto key = UINTN(0);
     auto d_size = UINTN(0);
@@ -124,7 +131,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         // that changed the memory map, retry
     }
 
+    //
+    // done with uefi information, start kenerl
+    //
     kernel_start();
-
-    return EFI_SUCCESS;
 }
