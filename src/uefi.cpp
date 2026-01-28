@@ -209,6 +209,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     return EFI_ABORTED;
                 }
             }
+            // done with apic configuration
+            break;
         }
     }
 
