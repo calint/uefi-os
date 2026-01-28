@@ -14,6 +14,7 @@ APIC apic;
 Heap heap;
 
 namespace {
+
 [[noreturn]] auto panic(u32 color) -> void {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         frame_buffer.pixels[i] = color;
@@ -25,12 +26,13 @@ namespace {
 }
 
 auto init_sse() -> void {
-    u64 cr0, cr4;
+    u64 cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~(1ull << 2); // clear em (emulation)
     cr0 |= (1ull << 1);  // set mp (monitor coprocessor)
     asm volatile("mov %0, %%cr0" : : "r"(cr0));
 
+    u64 cr4;
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
     cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
