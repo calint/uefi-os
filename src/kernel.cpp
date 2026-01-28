@@ -13,8 +13,9 @@ KeyboardConfig keyboard_config;
 Heap heap;
 
 extern "C" auto memset(void* s, int c, u64 n) -> void* {
+    auto orig_s = s;
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
-    return s;
+    return orig_s;
 }
 
 static auto make_heap() -> Heap {
@@ -30,8 +31,9 @@ static auto make_heap() -> Heap {
             auto chunk_size = d->NumberOfPages * 4096;
             if (chunk_size > result.size) {
                 auto aligned_start = (chunk_start + 4095) & ~4095ull;
+                auto aligned_size = (chunk_size + 4095) & ~4095ull;
                 result.start = reinterpret_cast<void*>(aligned_start);
-                result.size = chunk_size;
+                result.size = aligned_size;
             }
         }
     }
@@ -149,6 +151,11 @@ static auto init_paging() -> void {
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
 
+    auto constexpr MMIO_FLAGS = 0x13;
+    // 0x01 present
+    // 0x02 writable
+    // 0x10 pcd (uncached)
+
     // map uefi allocated memory
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
@@ -168,18 +175,18 @@ static auto init_paging() -> void {
             //     map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 0x1B);
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
 
     serial_print("* apic\n");
-    map_range(0xfec0'0000, 0x20'0000, 0x1b);
-    map_range(0xfee0'0000, 0x20'0000, 0x1b);
+    map_range(u64(io_apic), 0x1000, MMIO_FLAGS);
+    map_range(u64(lapic), 0x1000, MMIO_FLAGS);
 
     serial_print("* frame buffer\n");
     auto fb_base = u64(frame_buffer.pixels);
     auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
-    map_range(fb_base, fb_size, 3);
+    map_range(fb_base, fb_size, 3); // present | RW
 
     serial_print("* heap\n");
     map_range(heap_start, heap_size, 3);
@@ -188,7 +195,8 @@ static auto init_paging() -> void {
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
-static auto volatile lapic = reinterpret_cast<u32*>(0xfee0'0000);
+u32 volatile* io_apic;
+u32 volatile* lapic;
 
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
@@ -226,7 +234,6 @@ static auto init_apic_timer() -> void {
 }
 
 static auto io_apic_write(u32 reg, u32 val) -> void {
-    auto volatile io_apic = reinterpret_cast<u32*>(0xfec0'0000);
     io_apic[0] = reg; // select register
     io_apic[4] = val; // write value
 }

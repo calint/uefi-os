@@ -66,7 +66,6 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     print_string(col_lbl, row, 0xffffffff, "frameaddr: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(frame_buffer.pixels), 3);
     ++row;
-    volatile auto lapic = reinterpret_cast<u32*>(0xfee00000);
     auto lapic_id = (lapic[0x020 / 4] >> 24) & 0xff; // local apic id register
     print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
     print_hex(col_val, row, 0xffffffff, lapic_id, 3);

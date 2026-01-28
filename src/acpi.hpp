@@ -51,3 +51,15 @@ struct [[gnu::packed]] MADT_ISO {
     u32 gsi;   // The Global System Interrupt (IO APIC pin)
     u16 flags; // Polarity and Trigger Mode
 };
+
+struct [[gnu::packed]] MADT_IOAPIC {
+    u8 type, len, id, res;
+    u32 address;
+    u32 gsi_base;
+};
+
+struct [[gnu::packed]] MADT_LAPIC_Override {
+    u8 type, len;
+    u16 res;
+    u64 address;
+};

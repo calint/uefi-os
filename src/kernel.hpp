@@ -37,6 +37,8 @@ extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
 extern KeyboardConfig keyboard_config;
 extern Heap heap;
+extern u32 volatile* io_apic;
+extern u32 volatile* lapic;
 
 inline auto outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));

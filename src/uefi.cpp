@@ -29,7 +29,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     .height = gop->Mode->Info->VerticalResolution,
                     .stride = gop->Mode->Info->PixelsPerScanLine};
 
-    // make keyboard config
+    // make keyboard config, lapic and io apic addresses
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -54,6 +54,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto kbd_gsi = 1u;   // default to Pin 1
     auto kbd_flags = 0u; // default active high, edge
 
+    // initiate io_apic and lapic
+    // default values
+    io_apic = reinterpret_cast<u32 volatile*>(0xfec00000);
+    lapic = reinterpret_cast<u32 volatile*>(0xfee00000);
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
@@ -65,7 +69,13 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
-                if (entry->type == 2) { // ISO
+                if (entry->type == 1) {
+                    io_apic = reinterpret_cast<u32 volatile*>(
+                        reinterpret_cast<MADT_IOAPIC*>(p)->address);
+                } else if (entry->type == 5) {
+                    lapic = reinterpret_cast<u32 volatile*>(
+                        reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
+                } else if (entry->type == 2) { // ISO
                     auto iso = reinterpret_cast<MADT_ISO*>(p);
                     if (iso->source == 1) { // keyboard
                         serial_print("uefi: found keyboard config");
@@ -102,18 +112,16 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
-    if (bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver) != EFI_SUCCESS) {
-        serial_print("failed to get memory map\n");
-        return EFI_ABORTED;
-    }
-    memory_map = {.buffer = reinterpret_cast<void*>(map),
-                  .size = size,
-                  .descriptor_size = d_size,
-                  .descriptor_version = d_ver};
-
-    if (bs->ExitBootServices(img, key) != EFI_SUCCESS) {
-        serial_print("failed to exit boot service\n");
-        return EFI_ABORTED;
+    while (bs->GetMemoryMap(&size, map, &key, &d_size, &d_ver) == EFI_SUCCESS) {
+        memory_map = {.buffer = reinterpret_cast<void*>(map),
+                      .size = size,
+                      .descriptor_size = d_size,
+                      .descriptor_version = d_ver};
+        if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
+            break;
+        }
+        // if failed then the key was stale due to something like an interrupt
+        // that changed the memory map, retry
     }
 
     kernel_start();
