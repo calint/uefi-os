@@ -58,8 +58,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto kbd_flags = 0u; // default active high, edge
 
     // default io_apic and apic config
-    io_apic = reinterpret_cast<u32 volatile*>(0xfec00000);
-    lapic = reinterpret_cast<u32 volatile*>(0xfee00000);
+    apic.io = reinterpret_cast<u32 volatile*>(0xfec00000);
+    apic.local = reinterpret_cast<u32 volatile*>(0xfee00000);
 
     // find override values
     for (auto i = 0u; i < entries; ++i) {
@@ -74,10 +74,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
                 if (entry->type == 1) {
-                    io_apic = reinterpret_cast<u32 volatile*>(
+                    apic.io = reinterpret_cast<u32 volatile*>(
                         reinterpret_cast<MADT_IOAPIC*>(p)->address);
                 } else if (entry->type == 5) {
-                    lapic = reinterpret_cast<u32 volatile*>(
+                    apic.local = reinterpret_cast<u32 volatile*>(
                         reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
                 } else if (entry->type == 2) { // ISO
                     auto iso = reinterpret_cast<MADT_ISO*>(p);

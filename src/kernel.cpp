@@ -10,6 +10,7 @@ alignas(16) static u8 stack[16384 * 16];
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
 KeyboardConfig keyboard_config;
+APIC apic;
 Heap heap;
 
 extern "C" auto memset(void* s, int c, u64 n) -> void* {
@@ -180,8 +181,8 @@ static auto init_paging() -> void {
     }
 
     serial_print("* apic\n");
-    map_range(u64(io_apic), 0x1000, MMIO_FLAGS);
-    map_range(u64(lapic), 0x1000, MMIO_FLAGS);
+    map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
+    map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
 
     serial_print("* frame buffer\n");
     auto fb_base = u64(frame_buffer.pixels);
@@ -195,9 +196,6 @@ static auto init_paging() -> void {
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
-u32 volatile* io_apic;
-u32 volatile* lapic;
-
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
 auto calibrate_apic(u32 hz) -> u32 {
@@ -208,7 +206,7 @@ auto calibrate_apic(u32 hz) -> u32 {
     outb(0x40, 0x2e); // hi byte of 11931
 
     // start lapic timer
-    lapic[0x380 / 4] = 0xffff'ffff; // max count
+    apic.local[0x380 / 4] = 0xffff'ffff; // max count
 
     // wait for pit to finish
     auto status = 0;
@@ -217,7 +215,8 @@ auto calibrate_apic(u32 hz) -> u32 {
         status = inb(0x40);
     }
 
-    auto ticks_per_10ms = 0xffff'ffff - lapic[0x390 / 4]; // current count reg
+    auto ticks_per_10ms =
+        0xffff'ffff - apic.local[0x390 / 4]; // current count reg
 
     return ticks_per_10ms * 100 / hz;
 }
@@ -227,19 +226,19 @@ static auto init_apic_timer() -> void {
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
 
-    lapic[0x0f0 / 4] = 0x1ff;             // software enable + spurious vector
-    lapic[0x3e0 / 4] = 0x03;              // divide by 16
-    lapic[0x320 / 4] = (1 << 17) | 32;    // periodic mode + vector 32
-    lapic[0x380 / 4] = calibrate_apic(2); // initial count
+    apic.local[0x0f0 / 4] = 0x1ff;          // software enable + spurious vector
+    apic.local[0x3e0 / 4] = 0x03;           // divide by 16
+    apic.local[0x320 / 4] = (1 << 17) | 32; // periodic mode + vector 32
+    apic.local[0x380 / 4] = calibrate_apic(2); // initial count
 }
 
 static auto io_apic_write(u32 reg, u32 val) -> void {
-    io_apic[0] = reg; // select register
-    io_apic[4] = val; // write value
+    apic.io[0] = reg; // select register
+    apic.io[4] = val; // write value
 }
 
 static auto init_io_apic() -> void {
-    auto cpu_id = (lapic[0x020 / 4] >> 24) & 0xff;
+    auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
@@ -319,7 +318,7 @@ extern "C" auto kernel_on_keyboard() -> void {
     }
 
     // set end of interrupt (EOI)
-    lapic[0x0B0 / 4] = 0;
+    apic.local[0x0B0 / 4] = 0;
 }
 
 extern "C" auto osca_on_timer() -> void;
@@ -327,7 +326,7 @@ extern "C" auto kernel_on_timer() -> void {
     osca_on_timer();
 
     // set end of interrupt (EOI)
-    lapic[0x0B0 / 4] = 0;
+    apic.local[0x0B0 / 4] = 0;
 }
 
 [[noreturn]] auto osca_start() -> void {

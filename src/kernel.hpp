@@ -33,12 +33,16 @@ typedef struct Heap {
     u64 size;
 } Heap;
 
+typedef struct APIC {
+    u32 volatile* io;
+    u32 volatile* local;
+} APIC;
+
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
 extern KeyboardConfig keyboard_config;
+extern APIC apic;
 extern Heap heap;
-extern u32 volatile* io_apic;
-extern u32 volatile* lapic;
 
 inline auto outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
