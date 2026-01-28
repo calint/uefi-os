@@ -4,7 +4,10 @@
 #include "efierr.h"
 #include "kernel.hpp"
 
-auto static guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
+namespace {
+// helper functions
+
+auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     // note: compare byte by byte because g1 and g2 not guaranteed to be aligned
     //       at 8 bytes. in c++ that is UB
     auto p1 = reinterpret_cast<u8 const*>(g1);
@@ -17,7 +20,7 @@ auto static guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-auto static acpi_checksum(void const* ptr, u32 length) -> bool {
+auto acpi_checksum(void const* ptr, u32 length) -> bool {
     auto p = static_cast<u8 const*>(ptr);
     auto sum = u8(0);
     for (auto i = 0u; i < length; ++i) {
@@ -26,7 +29,7 @@ auto static acpi_checksum(void const* ptr, u32 length) -> bool {
     return sum == 0;
 }
 
-auto static init_serial() -> void {
+auto init_serial() -> void {
     outb(0x3f8 + 1, 0x00); // disable interrupts
     outb(0x3f8 + 3, 0x80); // enable dlab
     outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
@@ -35,6 +38,7 @@ auto static init_serial() -> void {
     outb(0x3f8 + 2, 0xc7); // enable fifo
     outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
 }
+} // namespace
 
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
@@ -71,36 +75,26 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
-        if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
-                        &acpi_20_guid)) {
-            rsdp =
-                reinterpret_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
-            break;
+        if (!guids_equal(&sys->ConfigurationTable[i].VendorGuid,
+                         &acpi_20_guid)) {
+            continue;
         }
+        rsdp = reinterpret_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
+        break;
     }
-    if (!rsdp) {
-        serial_print("abort: no ACPI RSDP found\n");
-        return EFI_ABORTED;
-    }
-    if (!acpi_checksum(rsdp, rsdp->length)) {
-        serial_print("abort: RSDP checksum failed\n");
-        return EFI_ABORTED;
-    }
-    if (rsdp->revision < 2 || rsdp->xsdt_address == 0) {
-        serial_print("abort: ACPI < 2.0 not supported\n");
+    if (rsdp == nullptr || !acpi_checksum(rsdp, rsdp->length) ||
+        rsdp->revision < 2) {
+        serial_print("abort: malformed ACPI 2.0+ RSDP\n");
         return EFI_ABORTED;
     }
 
     // get extended system description table (xsdt): a list of pointers to all
     // other acpi tables
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
-    if (xsdt->length < sizeof(SDTHeader) ||
+    if (xsdt == nullptr || !acpi_checksum(xsdt, xsdt->length) ||
+        xsdt->length < sizeof(SDTHeader) ||
         ((xsdt->length - sizeof(SDTHeader)) & 7) != 0) {
-        serial_print("abort: invalid XSDT length\n");
-        return EFI_ABORTED;
-    }
-    if (!acpi_checksum(xsdt, xsdt->length)) {
-        serial_print("abort: XSDT checksum failed\n");
+        serial_print("abort: malformed XSDT\n");
         return EFI_ABORTED;
     }
 
