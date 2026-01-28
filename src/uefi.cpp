@@ -74,7 +74,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
 
     // default keyboard config
-    auto kbd_gsi = 1u;   // default to Pin 1
+    auto kbd_gsi = 1u;   // default to pin 1
     auto kbd_flags = 0u; // default active high, edge
 
     // default apic values
@@ -110,8 +110,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         return EFI_ABORTED;
                     }
                     if (io_apic_count < 8) {
-                        io_apics[io_apic_count++] =
+                        io_apics[io_apic_count] =
                             *reinterpret_cast<MADT_IOAPIC*>(p);
+                        ++io_apic_count;
                     }
                 } else if (entry->type == 5) {
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
