@@ -67,7 +67,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     //
 
     // get root system description pointer (rsdp): the "entry point" found via
-    // uefi.
+    // uefi
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -78,7 +78,6 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             break;
         }
     }
-
     if (!rsdp) {
         serial_print("abort: no ACPI RSDP found\n");
         return EFI_ABORTED;
@@ -92,8 +91,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
-    // get extended system description table: a list of pointers to all other
-    // acpi tables.
+    // get extended system description table (xsdt): a list of pointers to all
+    // other acpi tables
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
     if (xsdt->length < sizeof(SDTHeader) ||
         ((xsdt->length - sizeof(SDTHeader)) & 7) != 0) {
@@ -109,6 +108,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto entries = (xsdt->length - sizeof(SDTHeader)) / 8;
     auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
 
+    // retrieve all i/o apic in the system, find keyboard and map it
+
     // default keyboard config
     auto kbd_gsi = 1u;   // default to pin 1
     auto kbd_flags = 0u; // default active high, edge
@@ -117,8 +118,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     apic.io = reinterpret_cast<u32 volatile*>(0xfec00000);
     apic.local = reinterpret_cast<u32 volatile*>(0xfee00000);
 
-    // retrieve all apic in the system then find the keyboard and map it
-    MADT_IOAPIC io_apics[8]; // most systems have < 8
+    // io_apics found in the system (most systems < 8)
+    MADT_IOAPIC io_apics[8];
     auto io_apic_count = 0u;
 
     // find apic values and keyboard configuration
@@ -131,8 +132,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
-            // get multiple apic description table: defines how interrupts are
-            // routed to CPUs
+            // get multiple apic description table (madt): defines how
+            // interrupts are routed to CPUs
             auto madt = reinterpret_cast<MADT*>(header);
             if (!acpi_checksum(madt, madt->header.length)) {
                 serial_print("abort: invalid MADT checksum\n");
@@ -177,8 +178,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         return EFI_ABORTED;
                     }
                     auto iso = reinterpret_cast<MADT_ISO*>(p);
-                    if (iso->source == 1) { // keyboard
-                        serial_print("uefi: found keyboard config\n");
+                    if (iso->source == 1) {
+                        serial_print("info: found keyboard config\n");
                         kbd_gsi = iso->gsi;
                         kbd_flags = 0;
                         // polarity: 3 = active low
@@ -215,7 +216,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     for (auto i = 0u; i < io_apic_count; ++i) {
         if (kbd_gsi >= io_apics[i].gsi_base) {
             apic.io = reinterpret_cast<u32 volatile*>(io_apics[i].address);
-            // note: in a true multi-apic system, you'd check (gsi_base +
+            // note: in a true multi-apic system, check (gsi_base +
             //       max_interrupts)
             break;
         }
