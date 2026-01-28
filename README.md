@@ -11,7 +11,9 @@
 
 ## coding convention
 
-* if possible declare `auto` being the first word in declaration
+* if possible, declare `auto` being the first word in a declaration
 * for consistency declare pointers initiated with `nullptr` using `auto ptr =
   static_cast<type*>(nullptr)`
-* increments are done prefix
+* use prefix increments only
+* although anything that can be `const` should be it introduces too much noise
+  so it is sparsely used
