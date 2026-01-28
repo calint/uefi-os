@@ -24,8 +24,7 @@ namespace {
     }
 }
 
-auto init_cpu() -> void {
-    // init sse
+auto init_sse() -> void {
     u64 cr0, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~(1ull << 2); // clear em (emulation)
@@ -36,8 +35,9 @@ auto init_cpu() -> void {
     cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
     cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
+}
 
-    // init pat
+auto init_pat() -> void {
     u32 low, high;
     // read the current pat msr (0x277)
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
@@ -253,7 +253,7 @@ auto calibrate_apic(u32 hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
-auto init_timer() -> void {
+auto init_apic_timer() -> void {
     // disable legacy pic
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
@@ -395,8 +395,11 @@ extern "C" auto kernel_on_timer() -> void {
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
 
-    serial_print("init_cpu");
-    init_cpu();
+    serial_print("enable_sse");
+    init_sse();
+
+    serial_print("init_pat\n");
+    init_pat();
 
     serial_print("init_gdt\n");
     init_gdt();
@@ -408,7 +411,7 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     init_idt();
 
     serial_print("init_timer\n");
-    init_timer();
+    init_apic_timer();
 
     serial_print("init_keyboard\n");
     init_keyboard();
