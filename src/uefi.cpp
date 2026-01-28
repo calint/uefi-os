@@ -132,7 +132,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
 
     //
-    // done with uefi information, start kenerl
+    // done with uefi information, start kernel
     //
+
     kernel_start();
 }
