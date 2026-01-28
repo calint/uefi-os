@@ -110,11 +110,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // retrieve all i/o apic in the system, find keyboard and map it
 
-    // default keyboard config
-    auto kbd_gsi = 1u;   // default to pin 1
-    auto kbd_flags = 0u; // default active high, edge
-
-    // default apic values
+    // default system configuration
+    keyboard_config.gsi = 1u;
+    keyboard_config.flags = 0u;
     apic.io = reinterpret_cast<u32 volatile*>(0xfec00000);
     apic.local = reinterpret_cast<u32 volatile*>(0xfee00000);
 
@@ -180,15 +178,15 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     auto iso = reinterpret_cast<MADT_ISO*>(p);
                     if (iso->source == 1) {
                         serial_print("info: found keyboard config\n");
-                        kbd_gsi = iso->gsi;
-                        kbd_flags = 0;
+                        keyboard_config.gsi = iso->gsi;
+                        keyboard_config.flags = 0;
                         // polarity: 3 = active low
                         if ((iso->flags & 0x3) == 0x3) {
-                            kbd_flags |= (1 << 13);
+                            keyboard_config.flags |= (1 << 13);
                         }
                         // trigger: 3 = level
                         if (((iso->flags >> 2) & 0x3) == 0x3) {
-                            kbd_flags |= (1 << 15);
+                            keyboard_config.flags |= (1 << 15);
                         }
                     }
 
@@ -216,15 +214,13 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // select the apic connected to the keyboard gsi
     for (auto i = 0u; i < io_apic_count; ++i) {
-        if (kbd_gsi >= io_apics[i].gsi_base) {
+        if (keyboard_config.gsi >= io_apics[i].gsi_base) {
             apic.io = reinterpret_cast<u32 volatile*>(io_apics[i].address);
             // note: in a true multi-apic system, check (gsi_base +
             //       max_interrupts)
             break;
         }
     }
-
-    keyboard_config = {.gsi = kbd_gsi, .flags = kbd_flags};
 
     //
     // get memory map and exit boot services
