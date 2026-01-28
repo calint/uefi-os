@@ -13,98 +13,34 @@ KeyboardConfig keyboard_config;
 APIC apic;
 Heap heap;
 
-extern "C" auto memset(void* s, int c, u64 n) -> void* {
-    auto orig_s = s;
-    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
-    return orig_s;
+auto static init_sse() -> void {
+    u64 cr0, cr4;
+    asm volatile("mov %%cr0, %0" : "=r"(cr0));
+    cr0 &= ~(1ull << 2); // clear em (emulation)
+    cr0 |= (1ull << 1);  // set mp (monitor coprocessor)
+    asm volatile("mov %0, %%cr0" : : "r"(cr0));
+
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
+    cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
+    asm volatile("mov %0, %%cr4" : : "r"(cr4));
 }
 
-static auto make_heap() -> Heap {
-    Heap result{};
-    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
-    for (auto i = 0u; i < num_descriptors; ++i) {
-        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            u64(desc) + (i * memory_map.descriptor_size));
+auto static init_pat() -> void {
+    u32 low, high;
+    // read the current pat msr (0x277)
+    asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
-        if (d->Type == EfiConventionalMemory) {
-            auto chunk_start = d->PhysicalStart;
-            auto chunk_size = d->NumberOfPages * 4096;
-            if (chunk_size > result.size) {
-                auto aligned_start = (chunk_start + 4095) & ~4095ull;
-                auto aligned_size = (chunk_size + 4095) & ~4095ull;
-                result.start = reinterpret_cast<void*>(aligned_start);
-                result.size = aligned_size;
-            }
-        }
-    }
+    // the pat is an array of eight 8-bit records.
+    // set pa4 (bits 32-34 in the 64-bit msr, or bits 0-2 in 'high') to 0x01,
+    // which is the value for write-combining
+    high = (high & ~0x07u) | 0x01u;
 
-    return result;
+    // write back the modified pat
+    asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 }
 
-static auto allocate_page() -> void* {
-    if (heap.size < 4096) {
-        serial_print("error: out of memory for paging\n");
-        return nullptr;
-    }
-    auto ptr = heap.start;
-    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
-    heap.size -= 4096;
-    memset(ptr, 0, 4096);
-    return ptr;
-}
-
-static auto get_next_table(u64* table, u64 index) -> u64* {
-    if (!(table[index] & 0x01)) {
-        // entry is not present
-        auto next = allocate_page();
-        if (next == nullptr) {
-            return nullptr;
-        }
-        // set present (0x01) and writable (0x02)
-        table[index] = u64(next) | 0x03;
-    }
-    // return the pointer by masking out the attribute bits
-    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
-}
-
-// the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) static u64 boot_pml4[512];
-
-static auto map_range(u64 phys, u64 size, u64 flags) -> bool {
-    // align to 2MB
-    auto start = phys & ~0x1f'ffffull;
-    auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
-
-    serial_print("map_range: ");
-    serial_print_hex(start);
-    serial_print(" -> ");
-    serial_print_hex(end);
-    serial_print("\n");
-
-    // map in 2MB chunks
-    for (auto addr = start; addr < end; addr += 0x20'0000) {
-        auto pml4_idx = (addr >> 39) & 0x1ff;
-        auto pdp_idx = (addr >> 30) & 0x1ff;
-        auto pd_idx = (addr >> 21) & 0x1ff;
-
-        auto pdp = get_next_table(boot_pml4, pml4_idx);
-        if (pdp == nullptr) {
-            return false;
-        }
-
-        auto pd = get_next_table(pdp, pdp_idx);
-        if (pd == nullptr) {
-            return false;
-        }
-
-        // 0x80 is the "huge page" bit for 2mb entries in the page directory
-        pd[pd_idx] = addr | flags | 0x80;
-    }
-    return true;
-}
-
-static auto init_gdt() -> void {
+auto static init_gdt() -> void {
     struct [[gnu::packed]] GDTEntry {
         u16 limit_low;
         u16 base_low;
@@ -147,7 +83,100 @@ static auto init_gdt() -> void {
                  : "rax", "memory");
 }
 
-static auto init_paging() -> void {
+auto static make_heap() -> Heap {
+    // find largest contiguous chunk of memory
+    auto largest_chunk_size = 0ull;
+    auto aligned_start = 0ull;
+    auto aligned_size = 0ull;
+    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    for (auto i = 0u; i < num_descriptors; ++i) {
+        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            u64(desc) + (i * memory_map.descriptor_size));
+
+        if (d->Type == EfiConventionalMemory) {
+            auto chunk_start = d->PhysicalStart;
+            auto chunk_size = d->NumberOfPages * 4096;
+            if (chunk_size > largest_chunk_size) {
+                largest_chunk_size = chunk_size;
+                aligned_start = (chunk_start + 4095) & ~4095ull;
+                aligned_size = (chunk_size + 4095) & ~4095ull;
+            }
+        }
+    }
+
+    return {reinterpret_cast<void*>(aligned_start), aligned_size};
+}
+
+auto inline memset(void* s, int c, u64 n) -> void* {
+    auto orig_s = s;
+    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
+    return orig_s;
+}
+
+auto static allocate_page() -> void* {
+    if (heap.size < 4096) {
+        serial_print("error: out of memory for paging\n");
+        return nullptr;
+    }
+    auto ptr = heap.start;
+    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
+    heap.size -= 4096;
+    memset(ptr, 0, 4096);
+    return ptr;
+}
+
+auto static get_next_table(u64* table, u64 index) -> u64* {
+    if (!(table[index] & 0x01)) {
+        // entry is not present
+        auto next = allocate_page();
+        if (next == nullptr) {
+            return nullptr;
+        }
+        // set present (0x01) and writable (0x02)
+        table[index] = u64(next) | 0x03;
+    }
+    // return the pointer by masking out the attribute bits
+    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
+}
+
+// the top-level PML4 (512GB/entry) potentially covering 256 TB
+alignas(4096) static u64 boot_pml4[512];
+
+auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
+    // align to 2MB
+    auto start = phys & ~0x1f'ffffull;
+    auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
+
+    serial_print("map_range: ");
+    serial_print_hex(start);
+    serial_print(" -> ");
+    serial_print_hex(end);
+    serial_print("\n");
+
+    // map in 2MB chunks
+    for (auto addr = start; addr < end; addr += 0x20'0000) {
+        auto pml4_idx = (addr >> 39) & 0x1ff;
+        auto pdp_idx = (addr >> 30) & 0x1ff;
+        auto pd_idx = (addr >> 21) & 0x1ff;
+
+        auto pdp = get_next_table(boot_pml4, pml4_idx);
+        if (pdp == nullptr) {
+            return false;
+        }
+
+        auto pd = get_next_table(pdp, pdp_idx);
+        if (pd == nullptr) {
+            return false;
+        }
+
+        // 0x80 is the "huge page" bit for 2mb entries in the page directory
+        pd[pd_idx] = addr | flags | 0x80;
+    }
+    return true;
+}
+
+auto static init_paging() -> void {
     // save heap start before allocating pages
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
@@ -169,9 +198,9 @@ static auto init_paging() -> void {
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData)) {
             serial_print("* loaded kernel\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
-            // } else if (d->Type == EfiConventionalMemory) {
-            //     serial_print("* memory\n");
-            //     map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+        } else if (d->Type == EfiConventionalMemory) {
+            serial_print("* memory\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
@@ -183,10 +212,11 @@ static auto init_paging() -> void {
     map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
 
     serial_print("* frame buffer\n");
-    auto fb_base = u64(frame_buffer.pixels);
-    auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
-    map_range(fb_base, fb_size, 0x1b);
-    // 0x01 (present) | 0x02 (rw) | 0x08 (pwt) | 0x10 (pcd) = 0x1b
+    map_range(u64(frame_buffer.pixels),
+              frame_buffer.stride * frame_buffer.height * 4, 0x101b);
+    // flags:
+    // 0x01 (present) | 0x02 (rw) | 0x08 (pwt) | 0x10 (pcd) | 0x80 (huge) |
+    // 0x1000 (pat bit for 2mb) this points to pat entry 4 (wc) 0x01 (present) |
 
     serial_print("* heap\n");
     map_range(heap_start, heap_size, 3);
@@ -197,7 +227,7 @@ static auto init_paging() -> void {
 
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
-auto calibrate_apic(u32 hz) -> u32 {
+auto static calibrate_apic(u32 hz) -> u32 {
     // tell PIT to wait ~10ms
     // frequency is 1193182 hz. 10ms = 11931 ticks
     outb(0x43, 0x30); // channel 0, lo/hi, mode 0
@@ -220,7 +250,7 @@ auto calibrate_apic(u32 hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
-static auto init_apic_timer() -> void {
+auto static init_apic_timer() -> void {
     // disable legacy pic
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
@@ -231,49 +261,38 @@ static auto init_apic_timer() -> void {
     apic.local[0x380 / 4] = calibrate_apic(2); // initial count
 }
 
-static auto io_apic_write(u32 reg, u32 val) -> void {
+auto static io_apic_write(u32 reg, u32 val) -> void {
     apic.io[0] = reg; // select register
     apic.io[4] = val; // write value
 }
 
-static auto init_io_apic() -> void {
+auto static init_io_apic() -> void {
     auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 }
 
-static auto init_keyboard_hardware() -> void {
+auto static init_keyboard_hardware() -> void {
     // read all pending input
     while (inb(0x64) & 0x01) {
         inb(0x60);
     }
 
     // wait for input buffer empty before sending "enable scanning" command
-    while (inb(0x64) & 0x02)
-        ;
+    while (inb(0x64) & 0x02) {
+        asm volatile("pause");
+    }
 
     // send "enable scanning" command to the keyboard
     outb(0x60, 0xf4);
-
-    // wait for ACK (0xfa)
-    for (auto i = 0u; i < 1'000'000; ++i) { // larger timeout for slow hardware
-        // check if there is data to read
-        if (inb(0x64) & 0x01) {
-            if (inb(0x60) == 0xfa) {
-                break;
-            }
-        }
-        // small delay to prevent hammering the bus too hard
-        asm volatile("pause");
-    }
 }
 
 // callback assembler functions
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
-static auto init_idt() -> void {
+auto static init_idt() -> void {
     struct [[gnu::packed]] IDTEntry {
         u16 low;
         u16 sel;
@@ -345,6 +364,12 @@ extern "C" auto kernel_on_timer() -> void {
 
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
+
+    serial_print("enable_sse");
+    init_sse();
+
+    serial_print("init_pat\n");
+    init_pat();
 
     serial_print("init_gdt\n");
     init_gdt();
