@@ -24,7 +24,8 @@ namespace {
     }
 }
 
-auto init_sse() -> void {
+auto init_cpu() -> void {
+    // init sse
     u64 cr0, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~(1ull << 2); // clear em (emulation)
@@ -35,9 +36,8 @@ auto init_sse() -> void {
     cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
     cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
-}
 
-auto init_pat() -> void {
+    // init pat
     u32 low, high;
     // read the current pat msr (0x277)
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
@@ -395,11 +395,8 @@ extern "C" auto kernel_on_timer() -> void {
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
 
-    serial_print("enable_sse");
-    init_sse();
-
-    serial_print("init_pat\n");
-    init_pat();
+    serial_print("init_cpu");
+    init_cpu();
 
     serial_print("init_gdt\n");
     init_gdt();
