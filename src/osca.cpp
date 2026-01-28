@@ -1,6 +1,8 @@
 #include "ascii_font_8x8.hpp"
 #include "kernel.hpp"
 
+namespace {
+
 auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
     auto fb = frame_buffer.pixels;
     auto stride = frame_buffer.stride;
@@ -42,6 +44,7 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
         }
     }
 }
+} // namespace
 
 [[noreturn]] auto osca() -> void {
     serial_print("osca x64 kernel is running\n");
@@ -91,9 +94,9 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     }
 }
 
-static u32 tick;
-
 extern "C" auto osca_on_timer() -> void {
+    auto static tick = 0u;
+
     serial_print(".");
 
     ++tick;
@@ -104,9 +107,9 @@ extern "C" auto osca_on_timer() -> void {
     }
 }
 
-static auto kbd_intr_total = 0ull;
-
 extern "C" auto osca_on_keyboard(u8 scancode) -> void {
+    auto static kbd_intr_total = 0ull;
+
     kbd_intr_total++;
 
     // clear
