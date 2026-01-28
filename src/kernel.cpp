@@ -13,6 +13,16 @@ KeyboardConfig keyboard_config;
 APIC apic;
 Heap heap;
 
+[[noreturn]] auto static panic(u32 color) -> void {
+    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+        frame_buffer.pixels[i] = color;
+    }
+    // infinite loop so the hardware doesn't reboot
+    while (true) {
+        asm("hlt");
+    }
+}
+
 auto static init_sse() -> void {
     u64 cr0, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -38,6 +48,9 @@ auto static init_pat() -> void {
 
     // write back the modified pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
+
+    // serialize
+    asm volatile("wbinvd" ::: "memory");
 }
 
 auto static init_gdt() -> void {
@@ -109,15 +122,14 @@ auto static make_heap() -> Heap {
 }
 
 auto inline memset(void* s, int c, u64 n) -> void* {
-    auto orig_s = s;
-    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
-    return orig_s;
+    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory", "cc");
+    return s;
 }
 
 auto static allocate_page() -> void* {
     if (heap.size < 4096) {
         serial_print("error: out of memory for paging\n");
-        return nullptr;
+        panic(0xff00'0000);
     }
     auto ptr = heap.start;
     heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
@@ -130,9 +142,6 @@ auto static get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) {
         // entry is not present
         auto next = allocate_page();
-        if (next == nullptr) {
-            return nullptr;
-        }
         // set present (0x01) and writable (0x02)
         table[index] = u64(next) | 0x03;
     }
@@ -161,14 +170,7 @@ auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
         auto pd_idx = (addr >> 21) & 0x1ff;
 
         auto pdp = get_next_table(boot_pml4, pml4_idx);
-        if (pdp == nullptr) {
-            return false;
-        }
-
         auto pd = get_next_table(pdp, pdp_idx);
-        if (pd == nullptr) {
-            return false;
-        }
 
         // 0x80 is the "huge page" bit for 2mb entries in the page directory
         pd[pd_idx] = addr | flags | 0x80;
@@ -279,44 +281,47 @@ auto static init_io_apic() -> void {
 }
 
 static auto init_keyboard_hardware() -> void {
-    // read all pending input
+    // flush with timeout guard
+    auto flush_count = 0u;
     while (inb(0x64) & 0x01) {
         inb(0x60);
+        if (++flush_count > 100) {
+            serial_print("kbd: flush timeout\n");
+            break;
+        }
     }
 
-    // wait for input buffer empty before sending "enable scanning" command
-    while (inb(0x64) & 0x02)
-        ;
+    // wait for ready with timeout
+    auto wait_count = 0u;
+    while (inb(0x64) & 0x02) {
+        if (++wait_count > 100000) {
+            serial_print("kbd: controller timeout\n");
+            return;
+        }
+        asm volatile("pause");
+    }
 
-    // send "enable scanning" command to the keyboard
+    // send "enable scanning" to keyboard
     outb(0x60, 0xf4);
 
-    // wait for ACK (0xfa)
-    for (auto i = 0u; i < 1'000'000; ++i) { // larger timeout for slow hardware
-        // check if there is data to read
+    // wait for ack with diagnostic
+    auto ack_received = false;
+    for (auto i = 0u; i < 1000000; ++i) {
         if (inb(0x64) & 0x01) {
-            if (inb(0x60) == 0xfa) {
+            auto response = inb(0x60);
+            if (response == 0xfa) {
+                serial_print("kbd: ack\n");
+                ack_received = true;
                 break;
             }
         }
-        // small delay to prevent hammering the bus too hard
-        __asm__ volatile("pause");
+        asm volatile("pause");
+    }
+
+    if (!ack_received) {
+        serial_print("kbd: no ack\n");
     }
 }
-// auto static init_keyboard_hardware() -> void {
-//     // read all pending input
-//     while (inb(0x64) & 0x01) {
-//         inb(0x60);
-//     }
-//
-//     // wait for input buffer empty before sending "enable scanning" command
-//     while (inb(0x64) & 0x02) {
-//         asm volatile("pause");
-//     }
-//
-//     // send "enable scanning" command to the keyboard
-//     outb(0x60, 0xf4);
-// }
 
 // callback assembler functions
 extern "C" auto kernel_asm_timer_handler() -> void;
@@ -390,16 +395,6 @@ extern "C" auto kernel_on_timer() -> void {
     // compiler expects the stack to end in 0x8 upon entering a function.
 
     __builtin_unreachable();
-}
-
-[[noreturn]] auto static panic(u32 color) -> void {
-    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
-        frame_buffer.pixels[i] = color;
-    }
-    // infinite loop so the hardware doesn't reboot
-    while (true) {
-        asm("hlt");
-    }
 }
 
 extern "C" [[noreturn]] auto kernel_start() -> void {

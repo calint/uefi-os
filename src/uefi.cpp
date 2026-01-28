@@ -1,9 +1,10 @@
 #include <efi.h>
 
 #include "acpi.hpp"
+#include "efierr.h"
 #include "kernel.hpp"
 
-static inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
+auto static guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     // note: compare byte by byte because g1 and g2 not guaranteed to be aligned
     //       at 8 bytes. in c++ that is UB
     auto p1 = reinterpret_cast<u8 const*>(g1);
@@ -16,11 +17,11 @@ static inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-auto static validate_sdt_checksum(SDTHeader* header) -> bool {
-    u8 sum = 0;
-    auto bytes = reinterpret_cast<u8*>(header);
-    for (u32 i = 0; i < header->length; i++) {
-        sum += bytes[i];
+auto static acpi_checksum(void const* ptr, u32 length) -> bool {
+    auto p = static_cast<u8 const*>(ptr);
+    auto sum = u8(0);
+    for (auto i = 0u; i < length; ++i) {
+        sum += p[i];
     }
     return sum == 0;
 }
@@ -75,22 +76,26 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
 
     if (!rsdp) {
-        serial_print("abort: no ACPI RSDP found");
+        serial_print("abort: no ACPI RSDP found\n");
+        return EFI_ABORTED;
+    }
+    if (!acpi_checksum(rsdp, rsdp->length)) {
+        serial_print("abort: RSDP checksum failed\n");
         return EFI_ABORTED;
     }
     if (rsdp->revision < 2 || rsdp->xsdt_address == 0) {
-        serial_print("abort: ACPI < 2.0 not supported");
+        serial_print("abort: ACPI < 2.0 not supported\n");
         return EFI_ABORTED;
     }
 
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
-    if (!validate_sdt_checksum(xsdt)) {
-        serial_print("abort: XSDT checksum failed\n");
-        return EFI_ABORTED;
-    }
     if (xsdt->length < sizeof(SDTHeader) ||
         ((xsdt->length - sizeof(SDTHeader)) & 7) != 0) {
-        serial_print("abort: invalid XSDT length");
+        serial_print("abort: invalid XSDT length\n");
+        return EFI_ABORTED;
+    }
+    if (!acpi_checksum(xsdt, xsdt->length)) {
+        serial_print("abort: XSDT checksum failed\n");
         return EFI_ABORTED;
     }
 
@@ -113,14 +118,18 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
-        if (!validate_sdt_checksum(xsdt)) {
-            serial_print("abort: XSDT checksum failed\n");
+        if (!acpi_checksum(header, header->length)) {
+            serial_print("abort: SDTHeader checksum failed\n");
             return EFI_ABORTED;
         }
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
             auto madt = reinterpret_cast<MADT*>(header);
+            if (!acpi_checksum(madt, madt->header.length)) {
+                serial_print("abort: invalid MADT checksum\n");
+                return EFI_ABORTED;
+            }
             auto p = madt->entries;
             auto end = reinterpret_cast<u8*>(madt) + madt->header.length;
 
@@ -130,34 +139,41 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
                 if (entry->length < sizeof(MADT_EntryHeader)) {
                     // guard against broken firmware
-                    serial_print("abort: MADT entry length less than header");
+                    serial_print("abort: MADT entry length less than header\n");
+                    return EFI_ABORTED;
+                }
+                if (p + entry->length > end) {
+                    serial_print("abort: MADT entry overruns table\n");
                     return EFI_ABORTED;
                 }
                 if (entry->type == 1) {
                     if (entry->length < sizeof(MADT_IOAPIC)) {
-                        serial_print("abort: short MADT IOAPIC entry");
+                        serial_print("abort: short MADT IOAPIC entry\n");
                         return EFI_ABORTED;
                     }
-                    if (io_apic_count < 8) {
+                    if (io_apic_count >= 8) {
+                        serial_print("warning: >8 IOAPICs, ignoring extras\n");
+                    } else {
                         io_apics[io_apic_count] =
                             *reinterpret_cast<MADT_IOAPIC*>(p);
                         ++io_apic_count;
                     }
                 } else if (entry->type == 5) {
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
-                        serial_print("abort: short MADT LAPIC Override entry");
+                        serial_print(
+                            "abort: short MADT LAPIC Override entry\n");
                         return EFI_ABORTED;
                     }
                     apic.local = reinterpret_cast<u32 volatile*>(
                         reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
                 } else if (entry->type == 2) { // ISO
                     if (entry->length < sizeof(MADT_ISO)) {
-                        serial_print("abort: short MADT ISO entry");
+                        serial_print("abort: short MADT ISO entry\n");
                         return EFI_ABORTED;
                     }
                     auto iso = reinterpret_cast<MADT_ISO*>(p);
                     if (iso->source == 1) { // keyboard
-                        serial_print("uefi: found keyboard config");
+                        serial_print("uefi: found keyboard config\n");
                         kbd_gsi = iso->gsi;
                         kbd_flags = 0;
                         // polarity: 3 = active low
@@ -171,6 +187,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     }
                 }
                 p += entry->length;
+                if (p > end) {
+                    serial_print("abort: MADT entry overruns table\n");
+                    return EFI_ABORTED;
+                }
             }
         }
     }
@@ -202,7 +222,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto map_phys = EFI_PHYSICAL_ADDRESS(0);
     if (bs->AllocatePages(AllocateAnyPages, EfiLoaderData,
                           EFI_SIZE_TO_PAGES(size), &map_phys) != EFI_SUCCESS) {
-        serial_print("abort: could not allocate pages");
+        serial_print("abort: could not allocate pages\n");
         return EFI_ABORTED;
     }
 
@@ -220,7 +240,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         }
     }
     if (!clean_exit) {
-        serial_print("abort: did not do clean exit");
+        serial_print("abort: did not do clean exit\n");
         return EFI_ABORTED;
     }
 
