@@ -48,6 +48,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     //
     // get frame buffer config
     //
+
     auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
     auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
@@ -64,6 +65,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     //
     // get keyboard config, io_apic and lapic pointers
     //
+
+    // get root system description pointer (rsdp): the "entry point" found via
+    // uefi.
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -88,6 +92,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
+    // get extended system description table: a list of pointers to all other
+    // acpi tables.
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
     if (xsdt->length < sizeof(SDTHeader) ||
         ((xsdt->length - sizeof(SDTHeader)) & 7) != 0) {
@@ -99,7 +105,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
-    // calculate number of pointers in XSDT
+    // calculate number of pointers in xsdt
     auto entries = (xsdt->length - sizeof(SDTHeader)) / 8;
     auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
 
@@ -125,6 +131,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
+            // get multiple apic description table: defines how interrupts are
+            // routed to CPUs
             auto madt = reinterpret_cast<MADT*>(header);
             if (!acpi_checksum(madt, madt->header.length)) {
                 serial_print("abort: invalid MADT checksum\n");
@@ -138,7 +146,6 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
                 if (entry->length < sizeof(MADT_EntryHeader)) {
-                    // guard against broken firmware
                     serial_print("abort: MADT entry length less than header\n");
                     return EFI_ABORTED;
                 }
@@ -146,7 +153,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     serial_print("abort: MADT entry overruns table\n");
                     return EFI_ABORTED;
                 }
+
                 if (entry->type == 1) {
+                    // I/O APIC: physical MMIO address and GSI range for an
+                    // external interrupt controller
                     if (entry->length < sizeof(MADT_IOAPIC)) {
                         serial_print("abort: short MADT IOAPIC entry\n");
                         return EFI_ABORTED;
@@ -158,15 +168,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                             *reinterpret_cast<MADT_IOAPIC*>(p);
                         ++io_apic_count;
                     }
-                } else if (entry->type == 5) {
-                    if (entry->length < sizeof(MADT_LAPIC_Override)) {
-                        serial_print(
-                            "abort: short MADT LAPIC Override entry\n");
-                        return EFI_ABORTED;
-                    }
-                    apic.local = reinterpret_cast<u32 volatile*>(
-                        reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
-                } else if (entry->type == 2) { // ISO
+
+                } else if (entry->type == 2) {
+                    // Multiple APIC Description Table: Interrupt Source
+                    // Override
                     if (entry->length < sizeof(MADT_ISO)) {
                         serial_print("abort: short MADT ISO entry\n");
                         return EFI_ABORTED;
@@ -185,7 +190,18 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                             kbd_flags |= (1 << 15);
                         }
                     }
+
+                } else if (entry->type == 5) {
+                    // Local APIC Address Override
+                    if (entry->length < sizeof(MADT_LAPIC_Override)) {
+                        serial_print(
+                            "abort: short MADT LAPIC Override entry\n");
+                        return EFI_ABORTED;
+                    }
+                    apic.local = reinterpret_cast<u32 volatile*>(
+                        reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
                 }
+
                 p += entry->length;
                 if (p > end) {
                     serial_print("abort: MADT entry overruns table\n");

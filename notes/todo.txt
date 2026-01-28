@@ -1,4 +1,5 @@
 [ ] map exceptions interrupts
 [ ] handle spurious interrupts
+[ ] unmap the Null page
 [x] keyboard interrupt
 [x] timer interrupt
