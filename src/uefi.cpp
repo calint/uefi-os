@@ -81,6 +81,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     apic.io = reinterpret_cast<u32 volatile*>(0xfec00000);
     apic.local = reinterpret_cast<u32 volatile*>(0xfee00000);
 
+    // retrieve all apic in the system then find the keyboard and map it
+    MADT_IOAPIC io_apics[8]; // most systems have < 8
+    auto io_apic_count = 0u;
+
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
@@ -105,8 +109,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         serial_print("abort: short MADT IOAPIC entry");
                         return EFI_ABORTED;
                     }
-                    apic.io = reinterpret_cast<u32 volatile*>(
-                        reinterpret_cast<MADT_IOAPIC*>(p)->address);
+                    if (io_apic_count < 8) {
+                        io_apics[io_apic_count++] =
+                            *reinterpret_cast<MADT_IOAPIC*>(p);
+                    }
                 } else if (entry->type == 5) {
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
                         serial_print("abort: short MADT LAPIC Override entry");
@@ -138,6 +144,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             }
         }
     }
+
+    // select the apic connected to the keyboard gsi
+    for (auto i = 0u; i < io_apic_count; ++i) {
+        if (kbd_gsi >= io_apics[i].gsi_base) {
+            apic.io = reinterpret_cast<u32 volatile*>(io_apics[i].address);
+            // note: in a true multi-apic system, you'd check (gsi_base +
+            //       max_interrupts)
+            break;
+        }
+    }
+
     keyboard_config = {.gsi = kbd_gsi, .flags = kbd_flags};
 
     //

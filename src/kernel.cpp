@@ -1,6 +1,5 @@
 #include <efi.h>
 
-#include "efidef.h"
 #include "kernel.hpp"
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
@@ -177,6 +176,9 @@ auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
 }
 
 auto static init_paging() -> void {
+    // identity map the first 8GB
+    map_range(0, 0x2'0000'0000ull, 0x03);
+
     // save heap start before allocating pages
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
@@ -198,9 +200,9 @@ auto static init_paging() -> void {
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData)) {
             serial_print("* loaded kernel\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
-        } else if (d->Type == EfiConventionalMemory) {
-            serial_print("* memory\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+            // } else if (d->Type == EfiConventionalMemory) {
+            //     serial_print("* memory\n");
+            //     map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
@@ -273,20 +275,45 @@ auto static init_io_apic() -> void {
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 }
 
-auto static init_keyboard_hardware() -> void {
+static auto init_keyboard_hardware() -> void {
     // read all pending input
     while (inb(0x64) & 0x01) {
         inb(0x60);
     }
 
     // wait for input buffer empty before sending "enable scanning" command
-    while (inb(0x64) & 0x02) {
-        asm volatile("pause");
-    }
+    while (inb(0x64) & 0x02)
+        ;
 
     // send "enable scanning" command to the keyboard
     outb(0x60, 0xf4);
+
+    // wait for ACK (0xfa)
+    for (auto i = 0u; i < 1'000'000; ++i) { // larger timeout for slow hardware
+        // check if there is data to read
+        if (inb(0x64) & 0x01) {
+            if (inb(0x60) == 0xfa) {
+                break;
+            }
+        }
+        // small delay to prevent hammering the bus too hard
+        __asm__ volatile("pause");
+    }
 }
+// auto static init_keyboard_hardware() -> void {
+//     // read all pending input
+//     while (inb(0x64) & 0x01) {
+//         inb(0x60);
+//     }
+//
+//     // wait for input buffer empty before sending "enable scanning" command
+//     while (inb(0x64) & 0x02) {
+//         asm volatile("pause");
+//     }
+//
+//     // send "enable scanning" command to the keyboard
+//     outb(0x60, 0xf4);
+// }
 
 // callback assembler functions
 extern "C" auto kernel_asm_timer_handler() -> void;
@@ -360,6 +387,16 @@ extern "C" auto kernel_on_timer() -> void {
     // compiler expects the stack to end in 0x8 upon entering a function.
 
     __builtin_unreachable();
+}
+
+[[noreturn]] auto static panic(u32 color) -> void {
+    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+        frame_buffer.pixels[i] = color;
+    }
+    // infinite loop so the hardware doesn't reboot
+    while (true) {
+        asm("hlt");
+    }
 }
 
 extern "C" [[noreturn]] auto kernel_start() -> void {
