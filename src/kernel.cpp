@@ -280,7 +280,7 @@ auto static init_io_apic() -> void {
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 }
 
-static auto init_keyboard_hardware() -> void {
+auto static init_keyboard_hardware() -> void {
     // flush with timeout guard
     auto flush_count = 0u;
     while (inb(0x64) & 0x01) {
