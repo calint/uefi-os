@@ -39,6 +39,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
     init_serial();
+
     serial_print("efi_main\n");
 
     auto bs = sys->BootServices;
