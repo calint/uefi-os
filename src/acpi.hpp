@@ -53,13 +53,17 @@ struct [[gnu::packed]] MADT_ISO {
 };
 
 struct [[gnu::packed]] MADT_IOAPIC {
-    u8 type, len, id, res;
+    u8 type;
+    u8 len;
+    u8 id;
+    u8 res;
     u32 address;
     u32 gsi_base;
 };
 
 struct [[gnu::packed]] MADT_LAPIC_Override {
-    u8 type, len;
+    u8 type;
+    u8 len;
     u16 res;
     u64 address;
 };
