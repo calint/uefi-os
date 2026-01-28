@@ -15,5 +15,5 @@
 * for consistency declare pointers initiated with `nullptr` using `auto ptr =
   static_cast<type*>(nullptr)`
 * use prefix increments only
-* although anything that can be `const` should be it introduces too much noise
+* although anything that can be `const` should be, it introduces too much noise
   so it is sparsely used
