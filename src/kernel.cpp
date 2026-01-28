@@ -253,7 +253,7 @@ auto calibrate_apic(u32 hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
-auto init_apic_timer() -> void {
+auto init_timer() -> void {
     // disable legacy pic
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
@@ -269,14 +269,12 @@ auto io_apic_write(u32 reg, u32 val) -> void {
     apic.io[4] = val; // write value
 }
 
-auto init_io_apic() -> void {
+auto init_keyboard() -> void {
     auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
-}
 
-auto init_keyboard_hardware() -> void {
     // flush with timeout guard
     auto flush_count = 0u;
     while (inb(0x64) & 0x01) {
@@ -412,14 +410,11 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     serial_print("init_idt\n");
     init_idt();
 
-    serial_print("init_apic_timer\n");
-    init_apic_timer();
+    serial_print("init_timer\n");
+    init_timer();
 
-    serial_print("init_io_apic\n");
-    init_io_apic();
-
-    serial_print("init_keyboard_hardware\n");
-    init_keyboard_hardware();
+    serial_print("init_keyboard\n");
+    init_keyboard();
 
     serial_print("osca_start\n");
     osca_start();
