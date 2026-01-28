@@ -153,9 +153,7 @@ static auto init_paging() -> void {
     auto heap_size = heap.size;
 
     auto constexpr MMIO_FLAGS = 0x13;
-    // 0x01 present
-    // 0x02 writable
-    // 0x10 pcd (uncached)
+    // 0x01 present | 0x02 writable | 0x10 pcd (uncached)
 
     // map uefi allocated memory
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
@@ -187,7 +185,8 @@ static auto init_paging() -> void {
     serial_print("* frame buffer\n");
     auto fb_base = u64(frame_buffer.pixels);
     auto fb_size = frame_buffer.stride * frame_buffer.height * 4;
-    map_range(fb_base, fb_size, 3); // present | RW
+    map_range(fb_base, fb_size, 0x1b);
+    // 0x01 (present) | 0x02 (rw) | 0x08 (pwt) | 0x10 (pcd) = 0x1b
 
     serial_print("* heap\n");
     map_range(heap_start, heap_size, 3);
@@ -334,8 +333,12 @@ extern "C" auto kernel_on_timer() -> void {
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
-                 : "r"(&stack[sizeof(stack)]), "r"(osca)
+                 : "r"(&stack[sizeof(stack)] - 8), "r"(osca)
                  : "memory");
+    // note: why -8
+    // The x86-64 System V ABI requires the stack to be 16-byte aligned at the
+    // point a call occurs. Since a call pushes an 8-byte return address, the
+    // compiler expects the stack to end in 0x8 upon entering a function.
 
     __builtin_unreachable();
 }
