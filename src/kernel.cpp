@@ -198,9 +198,9 @@ auto static init_paging() -> void {
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
                    (d->Type == EfiBootServicesCode) ||
                    (d->Type == EfiBootServicesData)) {
+            // note: the kernel is loaded by uefi in EfiLoaderCode and Data
             // note: EfiBootServiceCode and Data is mapped because before osca
             //       is started the stack is there
-            // note: the kernel is loaded by uefi in EfiLoaderCode and Data
             serial_print("* loaded kernel and current stack\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiConventionalMemory) {
