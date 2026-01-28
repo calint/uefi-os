@@ -25,9 +25,20 @@ auto static validate_sdt_checksum(SDTHeader* header) -> bool {
     return sum == 0;
 }
 
+auto static init_serial() -> void {
+    outb(0x3f8 + 1, 0x00); // disable interrupts
+    outb(0x3f8 + 3, 0x80); // enable dlab
+    outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
+    outb(0x3f8 + 1, 0x00); // divisor high
+    outb(0x3f8 + 3, 0x03); // 8n1, disable dlab
+    outb(0x3f8 + 2, 0xc7); // enable fifo
+    outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
+}
+
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
+    init_serial();
     serial_print("efi_main\n");
 
     auto bs = sys->BootServices;
