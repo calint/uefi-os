@@ -13,7 +13,8 @@ KeyboardConfig keyboard_config;
 APIC apic;
 Heap heap;
 
-[[noreturn]] auto static panic(u32 color) -> void {
+namespace {
+[[noreturn]] auto panic(u32 color) -> void {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         frame_buffer.pixels[i] = color;
     }
@@ -23,7 +24,7 @@ Heap heap;
     }
 }
 
-auto static init_sse() -> void {
+auto init_sse() -> void {
     u64 cr0, cr4;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~(1ull << 2); // clear em (emulation)
@@ -36,7 +37,7 @@ auto static init_sse() -> void {
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
 }
 
-auto static init_pat() -> void {
+auto init_pat() -> void {
     u32 low, high;
     // read the current pat msr (0x277)
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
@@ -53,7 +54,7 @@ auto static init_pat() -> void {
     asm volatile("wbinvd" ::: "memory");
 }
 
-auto static init_gdt() -> void {
+auto init_gdt() -> void {
     struct [[gnu::packed]] GDTEntry {
         u16 limit_low;
         u16 base_low;
@@ -96,7 +97,7 @@ auto static init_gdt() -> void {
                  : "rax", "memory");
 }
 
-auto static make_heap() -> Heap {
+auto make_heap() -> Heap {
     // find largest contiguous chunk of memory
     auto largest_chunk_size = 0ull;
     auto aligned_start = 0ull;
@@ -121,12 +122,7 @@ auto static make_heap() -> Heap {
     return {reinterpret_cast<void*>(aligned_start), aligned_size};
 }
 
-auto inline memset(void* s, int c, u64 n) -> void* {
-    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory", "cc");
-    return s;
-}
-
-auto static allocate_page() -> void* {
+auto allocate_page() -> void* {
     if (heap.size < 4096) {
         serial_print("error: out of memory for paging\n");
         panic(0xff00'0000);
@@ -138,7 +134,7 @@ auto static allocate_page() -> void* {
     return ptr;
 }
 
-auto static get_next_table(u64* table, u64 index) -> u64* {
+auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) {
         // entry is not present
         auto next = allocate_page();
@@ -150,9 +146,9 @@ auto static get_next_table(u64* table, u64 index) -> u64* {
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) static u64 boot_pml4[512];
+alignas(4096) u64 boot_pml4[512];
 
-auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
+auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     // align to 2MB
     auto start = phys & ~0x1f'ffffull;
     auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
@@ -178,7 +174,7 @@ auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
     return true;
 }
 
-auto static init_paging() -> void {
+auto init_paging() -> void {
     // save heap start before allocating pages
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
@@ -234,7 +230,7 @@ auto static init_paging() -> void {
 
 // LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
 // varies between machines
-auto static calibrate_apic(u32 hz) -> u32 {
+auto calibrate_apic(u32 hz) -> u32 {
     // tell PIT to wait ~10ms
     // frequency is 1193182 hz. 10ms = 11931 ticks
     outb(0x43, 0x30); // channel 0, lo/hi, mode 0
@@ -257,7 +253,7 @@ auto static calibrate_apic(u32 hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
-auto static init_apic_timer() -> void {
+auto init_apic_timer() -> void {
     // disable legacy pic
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
@@ -268,19 +264,19 @@ auto static init_apic_timer() -> void {
     apic.local[0x380 / 4] = calibrate_apic(2); // initial count
 }
 
-auto static io_apic_write(u32 reg, u32 val) -> void {
+auto io_apic_write(u32 reg, u32 val) -> void {
     apic.io[0] = reg; // select register
     apic.io[4] = val; // write value
 }
 
-auto static init_io_apic() -> void {
+auto init_io_apic() -> void {
     auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 }
 
-auto static init_keyboard_hardware() -> void {
+auto init_keyboard_hardware() -> void {
     // flush with timeout guard
     auto flush_count = 0u;
     while (inb(0x64) & 0x01) {
@@ -327,7 +323,7 @@ auto static init_keyboard_hardware() -> void {
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
-auto static init_idt() -> void {
+auto init_idt() -> void {
     struct [[gnu::packed]] IDTEntry {
         u16 low;
         u16 sel;
@@ -396,6 +392,7 @@ extern "C" auto kernel_on_timer() -> void {
 
     __builtin_unreachable();
 }
+} // namespace
 
 extern "C" [[noreturn]] auto kernel_start() -> void {
     heap = make_heap();
