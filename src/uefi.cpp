@@ -123,10 +123,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
-        if (!acpi_checksum(header, header->length)) {
-            serial_print("abort: SDTHeader checksum failed\n");
-            return EFI_ABORTED;
+        if (header == nullptr || !acpi_checksum(header, header->length)) {
+            serial_print("warning: skipping table with invalid checksum\n");
+            continue;
         }
+
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
@@ -144,18 +145,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
-                if (entry->length < sizeof(MADT_EntryHeader)) {
-                    serial_print("abort: MADT entry length less than header\n");
-                    return EFI_ABORTED;
-                }
-                if (p + entry->length > end) {
-                    serial_print("abort: MADT entry overruns table\n");
+                if (entry->length < sizeof(MADT_EntryHeader) ||
+                    (p + entry->length > end)) {
+                    serial_print("abort: malformed MADT entry\n");
                     return EFI_ABORTED;
                 }
 
-                if (entry->type == 1) {
-                    // I/O APIC: physical MMIO address and GSI range for an
-                    // external interrupt controller
+                switch (entry->type) {
+
+                // I/O APIC: physical MMIO address and GSI range for an external
+                // interrupt controller
+                case 1: {
                     if (entry->length < sizeof(MADT_IOAPIC)) {
                         serial_print("abort: short MADT IOAPIC entry\n");
                         return EFI_ABORTED;
@@ -167,10 +167,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                             *reinterpret_cast<MADT_IOAPIC*>(p);
                         ++io_apic_count;
                     }
+                    break;
+                }
 
-                } else if (entry->type == 2) {
-                    // Multiple APIC Description Table: Interrupt Source
-                    // Override
+                // Multiple APIC Description Table: Interrupt Source Override
+                case 2: {
                     if (entry->length < sizeof(MADT_ISO)) {
                         serial_print("abort: short MADT ISO entry\n");
                         return EFI_ABORTED;
@@ -189,9 +190,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                             keyboard_config.flags |= (1 << 15);
                         }
                     }
+                    break;
+                }
 
-                } else if (entry->type == 5) {
-                    // Local APIC Address Override
+                // APIC Address Override
+                case 5: {
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
                         serial_print(
                             "abort: short MADT LAPIC Override entry\n");
@@ -199,6 +202,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     }
                     apic.local = reinterpret_cast<u32 volatile*>(
                         reinterpret_cast<MADT_LAPIC_Override*>(p)->address);
+                    break;
+                }
+
+                default:
+                    break;
                 }
 
                 p += entry->length;
