@@ -1,5 +1,6 @@
 #include <efi.h>
 
+#include "efidef.h"
 #include "kernel.hpp"
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
@@ -176,9 +177,6 @@ auto static map_range(u64 phys, u64 size, u64 flags) -> bool {
 }
 
 auto static init_paging() -> void {
-    // identity map the first 8GB
-    map_range(0, 0x2'0000'0000ull, 0x03);
-
     // save heap start before allocating pages
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
@@ -197,12 +195,17 @@ auto static init_paging() -> void {
             (d->Type == EfiACPIMemoryNVS)) {
             serial_print("* acpi tables\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
-        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData)) {
-            serial_print("* loaded kernel\n");
+        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
+                   (d->Type == EfiBootServicesCode) ||
+                   (d->Type == EfiBootServicesData)) {
+            // note: EfiBootServiceCode and Data is mapped because before osca
+            //       is started the stack is there
+            // note: the kernel is loaded by uefi in EfiLoaderCode and Data
+            serial_print("* loaded kernel and current stack\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
-            // } else if (d->Type == EfiConventionalMemory) {
-            //     serial_print("* memory\n");
-            //     map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+        } else if (d->Type == EfiConventionalMemory) {
+            serial_print("* memory\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);

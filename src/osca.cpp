@@ -66,11 +66,6 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     print_string(col_lbl, row, 0xffffffff, "frameaddr: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(frame_buffer.pixels), 3);
     ++row;
-    auto lapic_id =
-        (apic.local[0x020 / 4] >> 24) & 0xff; // local apic id register
-    print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
-    print_hex(col_val, row, 0xffffffff, lapic_id, 3);
-    ++row;
     print_string(col_lbl, row, 0xffffffff, "keyb gsi: ", 3);
     print_hex(col_val, row, 0xffffffff, keyboard_config.gsi, 3);
     ++row;
@@ -82,6 +77,11 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
     ++row;
     print_string(col_lbl, row, 0xffffffff, "lapic: ", 3);
     print_hex(col_val, row, 0xffffffff, u64(apic.local), 3);
+    ++row;
+    auto lapic_id =
+        (apic.local[0x020 / 4] >> 24) & 0xff; // local apic id register
+    print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
+    print_hex(col_val, row, 0xffffffff, lapic_id, 3);
     ++row;
 
     interrupts_enable();
