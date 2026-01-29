@@ -30,6 +30,16 @@ namespace {
     }
 }
 
+auto inline init_serial() -> void {
+    outb(0x3f8 + 1, 0x00); // disable interrupts
+    outb(0x3f8 + 3, 0x80); // enable dlab
+    outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
+    outb(0x3f8 + 1, 0x00); // divisor high
+    outb(0x3f8 + 3, 0x03); // 8n1, disable dlab
+    outb(0x3f8 + 2, 0xc7); // enable fifo
+    outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
+}
+
 auto init_sse() -> void {
     u64 cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -416,9 +426,12 @@ extern "C" auto kernel_on_timer() -> void {
 } // namespace
 
 extern "C" [[noreturn]] auto kernel_start() -> void {
+    init_serial();
+    serial_print("serial initiated\n");
+
     heap = make_heap();
 
-    serial_print("enable_sse");
+    serial_print("enable_sse\n");
     init_sse();
 
     serial_print("init_pat\n");

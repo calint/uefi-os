@@ -17,18 +17,13 @@ auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-auto inline init_serial() -> void {
-    outb(0x3f8 + 1, 0x00); // disable interrupts
-    outb(0x3f8 + 3, 0x80); // enable dlab
-    outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
-    outb(0x3f8 + 1, 0x00); // divisor high
-    outb(0x3f8 + 3, 0x03); // 8n1, disable dlab
-    outb(0x3f8 + 2, 0xc7); // enable fifo
-    outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
-}
-
 template <typename T> auto ptr_offset(void const* ptr, u64 bytes) -> T* {
     return reinterpret_cast<T*>(reinterpret_cast<uptr>(ptr) + bytes);
+}
+
+auto inline console_print(EFI_SYSTEM_TABLE* sys, char16_t const* s) -> void {
+    sys->ConOut->OutputString(
+        sys->ConOut, reinterpret_cast<CHAR16*>(const_cast<char16_t*>(s)));
 }
 
 } // namespace
@@ -42,9 +37,9 @@ template <typename T> auto ptr_offset(void const* ptr, u64 bytes) -> T* {
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
-    init_serial();
+    sys->ConOut->ClearScreen(sys->ConOut);
 
-    serial_print("efi_main\n");
+    console_print(sys, u"efi_main\n");
 
     auto bs = sys->BootServices;
 
@@ -56,7 +51,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
                            reinterpret_cast<void**>(&gop)) != EFI_SUCCESS) {
-        serial_print("abort: failed to get frame buffer\n");
+        console_print(sys, u"abort: failed to get frame buffer\n");
         return EFI_ABORTED;
     }
     frame_buffer = {.pixels =
@@ -93,7 +88,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         break;
     }
     if (!rsdp) {
-        serial_print("abort: no acpi 2.0 rsdp\n");
+        console_print(sys, u"abort: no ACPI 2.0+ RSDP\n");
         return EFI_ABORTED;
     }
 
@@ -169,7 +164,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 // interrupt controller
                 case 1: {
                     if (io_apic_count >= 8) {
-                        serial_print("warning: >8 IOAPICs, ignoring extras\n");
+                        console_print(
+                            sys, u"warning: >8 IOAPICs, ignoring extras\n");
                     } else {
                         io_apics[io_apic_count] =
                             *reinterpret_cast<MADT_IOAPIC*>(curr);
@@ -190,7 +186,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     };
                     auto iso = reinterpret_cast<MADT_ISO*>(curr);
                     if (iso->source == 1) {
-                        serial_print("info: found keyboard config\n");
+                        console_print(sys, u"info: found keyboard config\n");
                         keyboard_config.gsi = iso->gsi;
                         keyboard_config.flags = 0;
                         // polarity: 3 = active low
@@ -258,7 +254,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             AllocateAnyPages, EfiLoaderData, EFI_SIZE_TO_PAGES(size + 4096),
             reinterpret_cast<EFI_PHYSICAL_ADDRESS*>(&map)) != EFI_SUCCESS) {
         // note: +4096 add a full page of padding for fragmented maps
-        serial_print("abort: could not allocate pages\n");
+        console_print(sys, u"abort: could not allocate pages\n");
         return EFI_ABORTED;
     }
 
@@ -273,13 +269,13 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                               .size = size,
                               .descriptor_size = descriptor_size,
                               .descriptor_version = descriptor_ver};
-
                 kernel_start();
                 __builtin_unreachable();
             }
         }
     }
 
-    serial_print("abort: 16 attempts of clean exit failed");
+    console_print(sys, u"abort: 16 attempts of clean exit failed");
+
     return EFI_ABORTED;
 }
