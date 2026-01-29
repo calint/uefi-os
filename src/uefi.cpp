@@ -5,7 +5,7 @@
 namespace {
 // helper functions
 
-inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
+auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     // note: byte compare avoids alignment, padding, and aliasing issues
     auto p1 = reinterpret_cast<u8 const*>(g1);
     auto p2 = reinterpret_cast<u8 const*>(g2);
@@ -17,7 +17,7 @@ inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-inline auto init_serial() -> void {
+auto inline init_serial() -> void {
     outb(0x3f8 + 1, 0x00); // disable interrupts
     outb(0x3f8 + 3, 0x80); // enable dlab
     outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
@@ -139,7 +139,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(ptrs[i]);
-        constexpr auto APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
+        auto constexpr APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
         // signature compare (x86 little-endian)
         if (*reinterpret_cast<u32*>(header->signature) == APIC_SIGNATURE) {
             // get multiple apic description table (madt)
