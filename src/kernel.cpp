@@ -24,6 +24,7 @@ namespace {
         frame_buffer.pixels[i] = color;
     }
     // infinite loop so the hardware doesn't reboot
+    asm volatile("cli");
     while (true) {
         asm("hlt");
     }
@@ -151,12 +152,11 @@ auto allocate_page() -> void* {
 
 auto get_next_table(u64* table, u64 index) -> u64* {
     if (!(table[index] & 0x01)) {
-        // entry is not present
-        auto next = allocate_page();
-        // set present (0x01) and writable (0x02)
-        table[index] = u64(next) | 0x03;
+        // page not present
+        void* next = allocate_page(); // zeroed 4KB chunk
+        table[index] =
+            reinterpret_cast<uptr>(next) | 0x03; // present | writable
     }
-    // return the pointer by masking out the attribute bits
     return reinterpret_cast<u64*>(table[index] & ~0xfffull);
 }
 
@@ -164,27 +164,35 @@ auto get_next_table(u64* table, u64 index) -> u64* {
 alignas(4096) u64 boot_pml4[512];
 
 auto map_range(u64 phys, u64 size, u64 flags) -> bool {
-    // align to 2MB
-    auto start = phys & ~0x1f'ffffull;
-    auto end = (phys + size + 0x1f'ffffull) & ~0x1f'ffffull;
+    u64 addr = phys & ~0xfffull;
+    u64 end = (phys + size + 4095) & ~0xfffull;
 
-    serial_print("map_range: ");
-    serial_print_hex(start);
-    serial_print(" -> ");
-    serial_print_hex(end);
-    serial_print("\n");
+    while (addr < end) {
+        u64 pml4_idx = (addr >> 39) & 0x1ff;
+        u64 pdp_idx = (addr >> 30) & 0x1ff;
+        u64 pd_idx = (addr >> 21) & 0x1ff;
+        u64 pt_idx = (addr >> 12) & 0x1ff;
 
-    // map in 2MB chunks
-    for (auto addr = start; addr < end; addr += 0x20'0000) {
-        auto pml4_idx = (addr >> 39) & 0x1ff;
-        auto pdp_idx = (addr >> 30) & 0x1ff;
-        auto pd_idx = (addr >> 21) & 0x1ff;
+        u64* pdp = get_next_table(boot_pml4, pml4_idx);
+        u64* pd = get_next_table(pdp, pdp_idx);
 
-        auto pdp = get_next_table(boot_pml4, pml4_idx);
-        auto pd = get_next_table(pdp, pdp_idx);
+        // use 2MB huge page if 2MB aligned and enough space remains
+        if ((addr % 0x200000 == 0) && (end - addr >= 0x200000)) {
+            pd[pd_idx] = addr | flags | 0x80; // 0x80 = page size bit
+            addr += 0x200000;
+        } else {
+            // fallback to 4KB page
+            u64* pt = get_next_table(pd, pd_idx);
 
-        // 0x80 is the "huge page" bit for 2mb entries in the page directory
-        pd[pd_idx] = addr | flags | 0x80;
+            // adjust pat bit: for 2MB it's bit 12, for 4KB it's bit 7
+            u64 k4_flags = flags & ~0x80ull; // Clear PS bit
+            if (flags & 0x1000) {
+                k4_flags = (k4_flags & ~0x1000ull) | 0x80ull;
+            }
+
+            pt[pt_idx] = addr | k4_flags;
+            addr += 0x1000;
+        }
     }
     return true;
 }
@@ -261,9 +269,9 @@ auto calibrate_apic(u32 hz) -> u32 {
         outb(0x43, 0xe2); // read back command
         status = inb(0x40);
     }
+    auto current_count = apic.local[0x390 / 4];
 
-    auto ticks_per_10ms =
-        0xffff'ffff - apic.local[0x390 / 4]; // current count reg
+    auto ticks_per_10ms = 0xffff'ffff - current_count;
 
     return ticks_per_10ms * 100 / hz;
 }
