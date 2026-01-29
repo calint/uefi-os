@@ -13,6 +13,10 @@ KeyboardConfig keyboard_config;
 APIC apic;
 Heap heap;
 
+// required by msvc/clang abi when floating-point arithmetic is used.
+extern "C" i32 _fltused;
+extern "C" i32 _fltused = 0;
+
 namespace {
 
 [[noreturn]] auto panic(u32 color) -> void {

@@ -55,7 +55,7 @@ auto inline inb(u16 port) -> u8 {
     return result;
 }
 
-auto inline memset(void* s, int c, u64 n) -> void* {
+extern "C" auto inline memset(void* s, int c, u64 n) -> void* {
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory", "cc");
     return s;
 }
