@@ -5,9 +5,8 @@
 namespace {
 // helper functions
 
-auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
-    // note: compare byte by byte because g1 and g2 not guaranteed to be aligned
-    //       at 8 bytes. in c++ that is UB
+inline auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
+    // note: byte compare avoids alignment, padding, and aliasing issues
     auto p1 = reinterpret_cast<u8 const*>(g1);
     auto p2 = reinterpret_cast<u8 const*>(g2);
     for (auto i = 0u; i < sizeof(EFI_GUID); ++i) {
@@ -18,7 +17,7 @@ auto guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-auto init_serial() -> void {
+inline auto init_serial() -> void {
     outb(0x3f8 + 1, 0x00); // disable interrupts
     outb(0x3f8 + 3, 0x80); // enable dlab
     outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
@@ -93,6 +92,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         rsdp = static_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
         break;
     }
+    if (!rsdp) {
+        serial_print("abort: no acpi 2.0 rsdp\n");
+        return EFI_ABORTED;
+    }
 
     // get extended system description table (xsdt)
     //  a list of pointers to all other acpi tables
@@ -136,9 +139,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(ptrs[i]);
-        constexpr u32 APIC_SIG = 0x43495041; // 'APIC'
-        if (*reinterpret_cast<u32*>(header->signature) ==
-            APIC_SIG) { // 'APIC' in little-endian
+        constexpr auto APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
+        // signature compare (x86 little-endian)
+        if (*reinterpret_cast<u32*>(header->signature) == APIC_SIGNATURE) {
             // get multiple apic description table (madt)
             //  defines how interrupts are routed to CPUs
             struct [[gnu::packed]] MADT {
@@ -219,7 +222,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 default:
                     break;
                 }
-
+                if (entry->length == 0) {
+                    // just in case
+                    break;
+                }
                 curr += entry->length;
             }
             // done with apic configuration
@@ -227,13 +233,12 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         }
     }
 
-    // select the ioapic whose gsi range covers the keyboard interrupt
+    // select ioapic with highest gsi_base <= keyboard gsi
     for (auto i = 0u; i < io_apic_count; ++i) {
         if (keyboard_config.gsi >= io_apics[i].gsi_base) {
             apic.io = reinterpret_cast<u32 volatile*>(io_apics[i].address);
             // note: in a true multi-apic system, check (gsi_base +
             //       max_interrupts)
-            break;
         }
     }
 
