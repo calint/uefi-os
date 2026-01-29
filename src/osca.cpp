@@ -44,11 +44,10 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
         }
     }
 }
-} // namespace
 
 // prevent optimization so we actually see instructions in the binary
-void __attribute__((noinline)) simd_example(float* dest, float* src,
-                                            int count) {
+auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
+    -> void {
     for (int i = 0; i < count; ++i) {
         // Simple float math: multiply and add
         // This will typically generate MOVSS/ADDSS (scalar) or MOVAPS/ADDPS
@@ -57,7 +56,7 @@ void __attribute__((noinline)) simd_example(float* dest, float* src,
     }
 }
 
-void test_simd_support() {
+auto test_simd_support() -> void {
     serial_print("testing simd... ");
 
     alignas(16) float input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
@@ -83,6 +82,7 @@ void test_simd_support() {
         }
     }
 }
+} // namespace
 
 [[noreturn]] auto osca() -> void {
     serial_print("osca x64 kernel is running\n");
