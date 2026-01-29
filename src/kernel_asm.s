@@ -19,7 +19,8 @@
     push %r15
 
     # create space for FXSAVE (512 bytes, 16-byte aligned)
-    # note: stack is now 16 bytes aligned (40 hardware + 15 register * 8)
+    # note: stack is now 16 bytes aligned
+    # ((ss, rsp, rflags, cs, rip) + 15) * 8
     sub $512, %rsp
     fxsave (%rsp)
 .endm

@@ -8,6 +8,7 @@ using i8 = char;
 using i16 = short;
 using i32 = int;
 using i64 = long long;
+using uptr = u64;
 
 typedef struct FrameBuffer {
     u32* pixels;

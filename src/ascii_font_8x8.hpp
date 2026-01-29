@@ -2,7 +2,7 @@
 
 #include "kernel.hpp"
 
-u8 const ASCII_FONT[128][8] = {
+u8 inline constexpr ASCII_FONT[128][8] = {
     {0},
     {0},
     {0},

@@ -38,6 +38,11 @@ auto init_serial() -> void {
     outb(0x3f8 + 2, 0xc7); // enable fifo
     outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
 }
+
+template <typename T = u8> auto ptr_offset(void* ptr, u64 bytes) -> T* {
+    return reinterpret_cast<T*>(reinterpret_cast<uptr>(ptr) + bytes);
+}
+
 } // namespace
 
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
@@ -70,8 +75,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // get keyboard config, io_apic and lapic pointers
     //
 
-    // get root system description pointer (rsdp): the "entry point" found via
-    // uefi
+    // get root system description pointer (rsdp)
+    //  the "entry point" found via uefi
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -79,7 +84,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                          &acpi_20_guid)) {
             continue;
         }
-        rsdp = reinterpret_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
+        rsdp = static_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
         break;
     }
     if (rsdp == nullptr || !acpi_checksum(rsdp, rsdp->length) ||
@@ -88,8 +93,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         return EFI_ABORTED;
     }
 
-    // get extended system description table (xsdt): a list of pointers to all
-    // other acpi tables
+    // get extended system description table (xsdt)
+    //  a list of pointers to all other acpi tables
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
     if (xsdt == nullptr || !acpi_checksum(xsdt, xsdt->length) ||
         xsdt->length < sizeof(SDTHeader) ||
@@ -100,17 +105,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // calculate number of pointers in xsdt
     auto entries = (xsdt->length - sizeof(SDTHeader)) / 8;
-    auto table_ptrs = reinterpret_cast<u64*>(u64(xsdt) + sizeof(SDTHeader));
+    auto table_ptrs = ptr_offset<u64>(xsdt, sizeof(SDTHeader));
 
-    // retrieve all i/o apic in the system, find keyboard and map it
+    // retrieve i/o apics in the system
+    // find keyboard and get gsi and flags
 
     // default system configuration
-    keyboard_config.gsi = 1u;
-    keyboard_config.flags = 0u;
-    apic.io = reinterpret_cast<u32 volatile*>(0xfec00000);
-    apic.local = reinterpret_cast<u32 volatile*>(0xfee00000);
+    keyboard_config = {.gsi = 1u, .flags = 0u};
+    apic = {.io = reinterpret_cast<u32 volatile*>(0xfec00000),
+            .local = reinterpret_cast<u32 volatile*>(0xfee00000)};
 
-    // io_apics found in the system (most systems < 8)
+    // i/o apics found in the system (most systems < 8)
     MADT_IOAPIC io_apics[8];
     auto io_apic_count = 0u;
 
@@ -118,29 +123,28 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(table_ptrs[i]);
         if (header == nullptr || !acpi_checksum(header, header->length)) {
-            serial_print("warning: skipping table with invalid checksum\n");
-            continue;
+            return EFI_ABORTED;
         }
 
         if (header->signature[0] == 'A' && header->signature[1] == 'P' &&
             header->signature[2] == 'I' && header->signature[3] == 'C') {
 
-            // get multiple apic description table (madt): defines how
-            // interrupts are routed to CPUs
+            // get multiple apic description table (madt)
+            //  defines how interrupts are routed to CPUs
             auto madt = reinterpret_cast<MADT*>(header);
             if (!acpi_checksum(madt, madt->header.length)) {
                 serial_print("abort: invalid MADT checksum\n");
                 return EFI_ABORTED;
             }
-            auto p = madt->entries;
-            auto end = reinterpret_cast<u8*>(madt) + madt->header.length;
 
             apic.local = reinterpret_cast<u32 volatile*>(madt->lapic_address);
 
+            auto p = madt->entries;
+            auto end = ptr_offset<u8>(madt, madt->header.length);
             while (p < end) {
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
                 if (entry->length < sizeof(MADT_EntryHeader) ||
-                    (p + entry->length > end)) {
+                    (p + entry->length > end) || entry->length < 2) {
                     serial_print("abort: malformed MADT entry\n");
                     return EFI_ABORTED;
                 }
@@ -167,7 +171,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 // Multiple APIC Description Table: Interrupt Source Override
                 case 2: {
                     if (entry->length < sizeof(MADT_ISO)) {
-                        serial_print("abort: short MADT ISO entry\n");
+                        serial_print("abort: malformed MADT ISO entry\n");
                         return EFI_ABORTED;
                     }
                     auto iso = reinterpret_cast<MADT_ISO*>(p);
@@ -191,7 +195,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 case 5: {
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
                         serial_print(
-                            "abort: short MADT LAPIC Override entry\n");
+                            "abort: malformed MADT LAPIC Override entry\n");
                         return EFI_ABORTED;
                     }
                     apic.local = reinterpret_cast<u32 volatile*>(
