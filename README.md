@@ -23,8 +23,8 @@
 ## coding convention
 
 * if possible, declare `auto` being the first word in a declaration
-  static_cast<type*>(nullptr)`
-* `nullptr` declarations are done in non-auto way
-* use prefix increments only for consistency
+* this applies to functions, inline, constexpr, const etc
+* `nullptr` declarations are done in non-auto way due to syntax noise
+* prefix increments only used
 * although anything that can be `const` should be declared as such, it
   introduces too much noise so it is sparsely used
