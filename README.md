@@ -9,6 +9,15 @@
 * timer
 * tasks
 
+## scope
+
+* x86-64 only
+* UEFI GOP required
+* ACPI 2.0+
+* modern PC firmware
+* no legacy BIOS
+* no broken firmware tolerance
+
 ## coding convention
 
 * if possible, declare `auto` being the first word in a declaration

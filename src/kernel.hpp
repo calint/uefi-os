@@ -10,34 +10,34 @@ using i32 = int;
 using i64 = long long;
 using uptr = u64;
 
-typedef struct FrameBuffer {
+struct FrameBuffer {
     u32* pixels;
     u32 width;
     u32 height;
     u32 stride;
-} FrameBuffer;
+};
 
-typedef struct MemoryMap {
+struct MemoryMap {
     void* buffer;
     u64 size;
     u64 descriptor_size;
     u32 descriptor_version;
-} MemoryMap;
+};
 
-typedef struct KeyboardConfig {
+struct KeyboardConfig {
     u32 gsi;
     u32 flags;
-} KeyboardConfig;
+};
 
-typedef struct Heap {
+struct Heap {
     void* start;
     u64 size;
-} Heap;
+};
 
-typedef struct APIC {
+struct APIC {
     u32 volatile* io;
     u32 volatile* local;
-} APIC;
+};
 
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
