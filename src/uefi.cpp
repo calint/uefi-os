@@ -1,6 +1,5 @@
 #include <efi.h>
 
-#include "acpi.hpp"
 #include "efierr.h"
 #include "kernel.hpp"
 
@@ -77,6 +76,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // get root system description pointer (rsdp)
     //  the "entry point" found via uefi
+    struct [[gnu::packed]] RSDP {
+        char signature[8];
+        u8 checksum;
+        char oem_id[6];
+        u8 revision;
+        u32 rsdt_address;
+        u32 length;
+        u64 xsdt_address; // 64-bit pointer to the XSDT
+        u8 extended_checksum;
+        u8 reserved[3];
+    };
     auto rsdp = static_cast<RSDP*>(nullptr);
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
@@ -95,6 +105,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // get extended system description table (xsdt)
     //  a list of pointers to all other acpi tables
+    struct [[gnu::packed]] SDTHeader {
+        char signature[4];
+        u32 length;
+        u8 revision;
+        u8 checksum;
+        char oem_id[6];
+        char oem_table_id[8];
+        u32 oem_revision;
+        u32 creator_id;
+        u32 creator_revision;
+    };
     auto xsdt = reinterpret_cast<SDTHeader*>(rsdp->xsdt_address);
     if (xsdt == nullptr || !acpi_checksum(xsdt, xsdt->length) ||
         xsdt->length < sizeof(SDTHeader) ||
@@ -116,6 +137,14 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             .local = reinterpret_cast<u32 volatile*>(0xfee00000)};
 
     // i/o apics found in the system (most systems < 8)
+    struct [[gnu::packed]] MADT_IOAPIC {
+        u8 type;
+        u8 len;
+        u8 id;
+        u8 res;
+        u32 address;
+        u32 gsi_base;
+    };
     MADT_IOAPIC io_apics[8];
     auto io_apic_count = 0u;
 
@@ -131,6 +160,12 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
             // get multiple apic description table (madt)
             //  defines how interrupts are routed to CPUs
+            struct [[gnu::packed]] MADT {
+                SDTHeader header;
+                u32 lapic_address;
+                u32 flags;
+                u8 entries[]; // Start of variable-length structures
+            };
             auto madt = reinterpret_cast<MADT*>(header);
             if (!acpi_checksum(madt, madt->header.length)) {
                 serial_print("abort: invalid MADT checksum\n");
@@ -142,6 +177,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             auto p = madt->entries;
             auto end = ptr_offset<u8>(madt, madt->header.length);
             while (p < end) {
+                struct [[gnu::packed]] MADT_EntryHeader {
+                    u8 type;
+                    u8 length;
+                };
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(p);
                 if (entry->length < sizeof(MADT_EntryHeader) ||
                     (p + entry->length > end) || entry->length < 2) {
@@ -170,6 +209,14 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
                 // Multiple APIC Description Table: Interrupt Source Override
                 case 2: {
+                    struct [[gnu::packed]] MADT_ISO {
+                        u8 type;   // 2
+                        u8 length; // 10
+                        u8 bus;    // 0 (ISA)
+                        u8 source; // The IRQ number (1 for keyboard)
+                        u32 gsi;   // The Global System Interrupt (IO APIC pin)
+                        u16 flags; // Polarity and Trigger Mode
+                    };
                     if (entry->length < sizeof(MADT_ISO)) {
                         serial_print("abort: malformed MADT ISO entry\n");
                         return EFI_ABORTED;
@@ -193,6 +240,12 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
                 // APIC Address Override
                 case 5: {
+                    struct [[gnu::packed]] MADT_LAPIC_Override {
+                        u8 type;
+                        u8 len;
+                        u16 res;
+                        u64 address;
+                    };
                     if (entry->length < sizeof(MADT_LAPIC_Override)) {
                         serial_print(
                             "abort: malformed MADT LAPIC Override entry\n");

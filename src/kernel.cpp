@@ -37,6 +37,15 @@ auto init_sse() -> void {
     cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
     cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
+
+    asm volatile("fninit");
+
+    // load a standard mxcsr state
+    // bits  7-12: mask all exceptions
+    // bits 13-14: round to nearest
+    // bit     15: flush to zero
+    u32 mxcsr = 0x1f00 | (1 << 15u);
+    asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
 auto init_pat() -> void {
