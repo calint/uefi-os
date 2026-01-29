@@ -17,6 +17,8 @@
 * modern PC firmware
 * no legacy BIOS
 * no broken firmware tolerance
+* real-time system with all memory allocated up-front
+* program assumed correct and exceptions should reboot
 
 ## coding convention
 
