@@ -29,54 +29,82 @@ namespace {
     }
 }
 
+// serial (uart) init
 auto inline init_serial() -> void {
-    outb(0x3f8 + 1, 0x00); // disable interrupts
-    outb(0x3f8 + 3, 0x80); // enable dlab
-    outb(0x3f8 + 0, 0x03); // divisor low (38400 baud)
-    outb(0x3f8 + 1, 0x00); // divisor high
-    outb(0x3f8 + 3, 0x03); // 8n1, disable dlab
-    outb(0x3f8 + 2, 0xc7); // enable fifo
-    outb(0x3f8 + 4, 0x0b); // irqs enabled, rts/dsr set
+    // ier (interrupt enable register): disable all hardware interrupts
+    // avoids triple fault before idt is ready
+    outb(0x3f8 + 1, 0x00);
+
+    // lcr (line control register): set bit 7 (dlab) to 1
+    // unlocks divisor registers at 0x3f8 and 0x3f9
+    outb(0x3f8 + 3, 0x80);
+
+    // dll/dlm (divisor latch low/high): set baud rate
+    // 115200 / 3 = 38400 baud
+    outb(0x3f8 + 0, 0x03);
+    outb(0x3f8 + 1, 0x00);
+
+    // lcr: 8 bits, no parity, 1 stop bit (8n1); dlab to 0
+    // locks divisor and enables data transfer
+    outb(0x3f8 + 3, 0x03);
+
+    // fcr (fifo control register): enable/clear buffers
+    // 14-byte threshold, clear transmit/receive queues
+    outb(0x3f8 + 2, 0xc7);
+
+    // mcr (modem control register): set rts/dtr
+    // bit 3 enables auxiliary output 2 for irqs
+    outb(0x3f8 + 4, 0x0b);
 }
 
+// sse (simd) init
 auto init_sse() -> void {
+    // cr0: control register 0
     u64 cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~(1ull << 2); // clear em (emulation)
-    cr0 |= (1ull << 1);  // set mp (monitor coprocessor)
+    cr0 &= ~(1ull << 2); // clear em: disable x87 emulation
+    cr0 |= (1ull << 1);  // set mp: monitor coprocessor (task switching)
     asm volatile("mov %0, %%cr0" : : "r"(cr0));
 
+    // cr4: control register 4
     u64 cr4;
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
-    cr4 |= (1ull << 9);  // set osfxsr (fxsave/fxrstor support)
-    cr4 |= (1ull << 10); // set osxmmexcpt (simd exception support)
+    cr4 |= (1ull << 9);  // set osfxsr: enable fxsave/fxrstor
+    cr4 |= (1ull << 10); // set osxmmexcpt: enable simd exceptions (#xm)
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
 
+    // reset fpu state to defaults
     asm volatile("fninit");
 
-    // load a standard mxcsr state
-    // bits  7-12: mask all exceptions
-    // bits 13-14: round to nearest
-    // bit     15: flush to zero
-    u32 mxcsr = 0x1f00 | (1 << 15u);
+    // mxcsr: control/status register for sse
+    //  bits name   description
+    //   0-5 flags  sticky bits set by hardware when errors occur
+    //     6 daz    denormals are zero (treat inputs as 0)
+    //  7-12 masks  set to 1 to ignore corresponding error
+    // 13-14 rc     rounding control (00: nearest, 01: down, 10: up, 11: zero)
+    //    15 ftz    flush to zero (treat tiny results as 0)
+    u32 mxcsr = 0x1f80 | (1 << 15u);
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
+// pat (page attribute table) init
 auto init_pat() -> void {
-    // read the current pat msr (0x277)
+    // msr 0x277: ia32_pat register
     u32 low;
     u32 high;
+    // rdmsr: read 64-bit model specific register into edx:eax
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
-    // the pat is an array of eight 8-bit records
-    // set pa4 (bits 32-34 in the 64-bit msr, or bits 0-2 in 'high') to 0x01,
-    // which is the value for write-combining
+    // pat index 4 (pa4): bits 32-34 of the 64-bit msr
+    // 0x01: write-combining (wc) mode
+    // wc is essential for framebuffers; it buffers writes to the gpu
     high = (high & ~0x07u) | 0x01u;
 
-    // write back the modified pat
+    // wrmsr: write edx:eax back to ia32_pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 
-    // serialize
+    // wbinvd: write back and invalidate cache
+    // ensures no stale cache lines exist after attribute change
     asm volatile("wbinvd" ::: "memory");
 }
 
