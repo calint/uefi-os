@@ -198,19 +198,24 @@ auto constexpr PAGE_PAT_2MB = (1ull << 12);
 auto constexpr USE_PAT_WC = (1ull << 12);
 
 auto map_range(u64 phys, u64 size, u64 flags) -> bool {
+    // align to 4KB page
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
 
     while (addr < end) {
+        // page map level 4
         auto pml4_idx = (addr >> 39) & 0x1ff;
+        // page directory pointer
         auto pdp_idx = (addr >> 30) & 0x1ff;
+        // page directory
         auto pd_idx = (addr >> 21) & 0x1ff;
+        // page table
         auto pt_idx = (addr >> 12) & 0x1ff;
 
         auto pdp = get_next_table(boot_pml4, pml4_idx);
         auto pd = get_next_table(pdp, pdp_idx);
 
-        if ((addr % 0x200000 == 0) && (end - addr >= 0x200000)) {
+        if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
             // 2MB page
             auto entry_flags = flags | PAGE_PS;
 
@@ -222,14 +227,13 @@ auto map_range(u64 phys, u64 size, u64 flags) -> bool {
             }
 
             pd[pd_idx] = addr | entry_flags;
-            addr += 0x200000;
+            addr += 0x20'0000;
         } else {
             // 4KB page
             auto pt = get_next_table(pd, pd_idx);
             auto entry_flags = flags;
 
             if (flags & USE_PAT_WC) {
-                // Goa
                 entry_flags &= ~PAGE_PWT;
                 entry_flags &= ~PAGE_PCD;
                 entry_flags &= ~USE_PAT_WC;
