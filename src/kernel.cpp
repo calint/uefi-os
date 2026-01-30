@@ -173,17 +173,17 @@ auto get_next_table(u64* table, u64 index) -> u64* {
 alignas(4096) u64 boot_pml4[512];
 
 auto map_range(u64 phys, u64 size, u64 flags) -> bool {
-    u64 addr = phys & ~0xfffull;
-    u64 end = (phys + size + 4095) & ~0xfffull;
+    auto addr = phys & ~0xfffull;
+    auto end = (phys + size + 4095) & ~0xfffull;
 
     while (addr < end) {
-        u64 pml4_idx = (addr >> 39) & 0x1ff;
-        u64 pdp_idx = (addr >> 30) & 0x1ff;
-        u64 pd_idx = (addr >> 21) & 0x1ff;
-        u64 pt_idx = (addr >> 12) & 0x1ff;
+        auto pml4_idx = (addr >> 39) & 0x1ff;
+        auto pdp_idx = (addr >> 30) & 0x1ff;
+        auto pd_idx = (addr >> 21) & 0x1ff;
+        auto pt_idx = (addr >> 12) & 0x1ff;
 
-        u64* pdp = get_next_table(boot_pml4, pml4_idx);
-        u64* pd = get_next_table(pdp, pdp_idx);
+        auto pdp = get_next_table(boot_pml4, pml4_idx);
+        auto pd = get_next_table(pdp, pdp_idx);
 
         // use 2MB huge page if 2MB aligned and enough space remains
         if ((addr % 0x200000 == 0) && (end - addr >= 0x200000)) {
@@ -191,10 +191,10 @@ auto map_range(u64 phys, u64 size, u64 flags) -> bool {
             addr += 0x200000;
         } else {
             // fallback to 4KB page
-            u64* pt = get_next_table(pd, pd_idx);
+            auto pt = get_next_table(pd, pd_idx);
 
             // adjust pat bit: for 2MB it's bit 12, for 4KB it's bit 7
-            u64 k4_flags = flags & ~0x80ull; // Clear PS bit
+            auto k4_flags = flags & ~0x80ull; // Clear PS bit
             if (flags & 0x1000) {
                 k4_flags = (k4_flags & ~0x1000ull) | 0x80ull;
             }
