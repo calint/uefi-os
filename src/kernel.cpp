@@ -431,18 +431,32 @@ auto init_apic_timer() -> void {
     apic.local[0x380 / 4] = calibrate_apic(2);
 }
 
+// io-apic register access
+// writes to an io-apic register using the index/data window
 auto io_apic_write(u32 reg, u32 val) -> void {
-    apic.io[0] = reg; // select register
+    // ioregsel (offset 0x00): select the target register index
+    apic.io[0] = reg;
+
+    // iowin (offset 0x10): write the 32-bit data to the selected register
+    // note: offset 0x10 is index [4] in a u32 array (4 * 4 bytes)
     apic.io[4] = val; // write value
 }
 
+// keyboard and io-apic routing
+// routes keyboard irq through io-apic and enables scanning
 auto init_keyboard() -> void {
+    // get local apic id of the current cpu (bits 24-31 of offset 0x020)
     auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
+    // configure io-apic redirection table for keyboard (usually gsi 1)
+    // index 0x10 is the start of the redirection table (2 x 32-bit registers
+    // per entry) low 32 bits: vector 33 | flags (trigger mode, polarity, etc.)
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
+    // high 32 bits: destination field (sets which cpu receives the interrupt)
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 
-    // flush with timeout guard
+    // flush: clear the output buffer (port 0x60) of any stale data
+    // check status register (port 0x64) bit 0 (output buffer full)
     auto flush_count = 0u;
     while (inb(0x64) & 0x01) {
         inb(0x60);
@@ -452,7 +466,8 @@ auto init_keyboard() -> void {
         }
     }
 
-    // wait for ready with timeout
+    // wait for controller: check bit 1 (input buffer full)
+    // cannot send commands until this bit is 0
     auto wait_count = 0u;
     while (inb(0x64) & 0x02) {
         if (++wait_count > 100000) {
@@ -462,12 +477,13 @@ auto init_keyboard() -> void {
         asm volatile("pause");
     }
 
-    // send "enable scanning" to keyboard
+    // send command 0xf4: enable scanning
+    // tells the keyboard to start sending scancodes when keys are pressed
     outb(0x60, 0xf4);
 
-    // wait for ack with diagnostic
+    // diagnostic: wait for 0xfa (acknowledge) from the keyboard
     auto ack_received = false;
-    for (auto i = 0u; i < 1000000; ++i) {
+    for (auto i = 0u; i < 1'000'000; ++i) {
         if (inb(0x64) & 0x01) {
             auto response = inb(0x60);
             if (response == 0xfa) {
@@ -480,7 +496,7 @@ auto init_keyboard() -> void {
     }
 
     if (!ack_received) {
-        serial_print("kbd: no ack\n");
+        serial_print("warning: kbd did not ack\n");
     }
 }
 
@@ -488,7 +504,9 @@ auto init_keyboard() -> void {
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
+// idt (interrupt descriptor table) init
 auto init_idt() -> void {
+    // 16-byte descriptor format for x86-64
     struct [[gnu::packed]] IDTEntry {
         u16 low;
         u16 sel;
@@ -499,9 +517,15 @@ auto init_idt() -> void {
         u32 res;
     };
 
+    // alignas(16): required for performance and hardware consistency
     alignas(16) static IDTEntry idt[256];
 
-    // set idt entry 32 (timer)
+    // set idt entry 32 (lapic timer)
+    // 0x8e: 10001110b -> p=1, dpl=00, type=1110 (64-bit interrupt gate)
+    // p : present
+    // dpl: ring 0
+    // type: disable nested interrupts
+    // 8: second entry in the gdt (code)
     auto apic_addr = u64(kernel_asm_timer_handler);
     idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                u32(apic_addr >> 32), 0};
@@ -511,50 +535,73 @@ auto init_idt() -> void {
     idt[33] = {u16(kbd_addr),       8, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 
+    // idtr: the 10-byte structure passed to 'lidt'
     struct [[gnu::packed]] IDTR {
         u16 limit;
         u64 base;
     };
 
     auto idtr = IDTR{sizeof(idt) - 1, u64(idt)};
+
+    // lidt: load the interrupt descriptor table register
     asm volatile("lidt %0" : : "m"(idtr));
 }
 
+// keyboard interrupt handler
 extern "C" auto osca_on_keyboard(u8 scancode) -> void;
+// c-linkage handler called by assembly isr stub
 extern "C" auto kernel_on_keyboard() -> void {
-    // read all pending scancodes from the controller
+    // drain ps/2 output buffer: bit 0 of status (0x64) means data is waiting
+    // reading all pending bytes prevents the controller from getting "stuck"
     while (inb(0x64) & 0x01) {
+        // read raw byte from data port
         auto scancode = inb(0x60);
+
+        // diagnostic: log scancode to serial for debugging
         serial_print("|");
         serial_print_hex_byte(scancode);
         serial_print("|");
+
+        // pass scancode to the operating system's input layer
         osca_on_keyboard(scancode);
     }
 
-    // set end of interrupt (EOI)
+    // eoi (end of interrupt): writing 0 to offset 0x0b0
+    // notifies the lapic that the handler is finished so it can deliver
+    // the next interrupt of equal or lower priority
     apic.local[0x0B0 / 4] = 0;
 }
 
+// lapic timer interrupt handler
 extern "C" auto osca_on_timer() -> void;
+// c-linkage handler called by the assembly timer stub
 extern "C" auto kernel_on_timer() -> void {
+    // notify the os layer that a tick has occurred
+    // typically used for task switching, sleep timers, or profiling
     osca_on_timer();
 
-    // set end of interrupt (EOI)
+    // eoi (end of interrupt): writing 0 to offset 0x0b0
+    // essential to clear the 'in-service' bit in the lapic
+    // failure to do this will prevent any further timer interrupts
     apic.local[0x0B0 / 4] = 0;
 }
 
+// jumping to the os entry point
 [[noreturn]] auto osca_start() -> void {
+    // pivot: load the new stack pointer (rsp) and base pointer (rbp)
+    // jump: perform an absolute indirect jump to the os entry function
     asm volatile("mov %0, %%rsp\n\t"
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
                  : "r"(&stack[sizeof(stack)] - 8), "r"(osca)
                  : "memory");
-    // note: why -8
-    // The x86-64 System V ABI requires the stack to be 16-byte aligned at the
-    // point a call occurs. Since a call pushes an 8-byte return address, the
+    // note: why -8?
+    // the x86-64 system v abi requires the stack to be 16-byte aligned at the
+    // point a call occurs. since a call pushes an 8-byte return address, the
     // compiler expects the stack to end in 0x8 upon entering a function.
 
+    // the compiler is informed that this point is never reached
     __builtin_unreachable();
 }
 } // namespace
