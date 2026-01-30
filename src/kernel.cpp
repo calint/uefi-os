@@ -252,11 +252,11 @@ auto init_paging() -> void {
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
 
-    // RAM: Present + Writable
+    // ram: present + writable
     auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
 
-    // MMIO: Present + Writable + Cache Disable
-    // used for APIC to ensure not reading stale register values
+    // mmio: present + writable + cache disable
+    // used for apic to ensure not reading stale register values
     auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
 
     // map uefi allocated memory
