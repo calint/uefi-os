@@ -134,7 +134,7 @@ auto test_simd_support() -> void {
     }
 }
 
-extern "C" auto osca_on_timer() -> void {
+auto osca_on_timer() -> void {
     auto static tick = 0u;
 
     serial_print(".");
@@ -147,7 +147,7 @@ extern "C" auto osca_on_timer() -> void {
     }
 }
 
-extern "C" auto osca_on_keyboard(u8 scancode) -> void {
+auto osca_on_keyboard(u8 scancode) -> void {
     auto static kbd_intr_total = 0ull;
 
     kbd_intr_total++;

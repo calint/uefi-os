@@ -16,6 +16,9 @@ Heap heap;
 extern "C" i32 _fltused;
 extern "C" i32 _fltused = 0;
 
+auto osca_on_keyboard(u8 scancode) -> void;
+auto osca_on_timer() -> void;
+
 namespace {
 
 [[noreturn]] auto panic(u32 color) -> void {
@@ -548,7 +551,6 @@ auto init_idt() -> void {
 }
 
 // keyboard interrupt handler
-extern "C" auto osca_on_keyboard(u8 scancode) -> void;
 // c-linkage handler called by assembly isr stub
 extern "C" auto kernel_on_keyboard() -> void {
     // drain ps/2 output buffer: bit 0 of status (0x64) means data is waiting
@@ -573,7 +575,6 @@ extern "C" auto kernel_on_keyboard() -> void {
 }
 
 // lapic timer interrupt handler
-extern "C" auto osca_on_timer() -> void;
 // c-linkage handler called by the assembly timer stub
 extern "C" auto kernel_on_timer() -> void {
     // notify the os layer that a tick has occurred
