@@ -16,9 +16,6 @@ Heap heap;
 extern "C" i32 _fltused;
 extern "C" i32 _fltused = 0;
 
-auto osca_on_keyboard(u8 scancode) -> void;
-auto osca_on_timer() -> void;
-
 namespace {
 
 [[noreturn]] auto panic(u32 color) -> void {
@@ -410,7 +407,7 @@ auto calibrate_apic(u32 hz) -> u32 {
 }
 
 // disables legacy pic and starts lapic timer in periodic mode
-auto init_apic_timer() -> void {
+auto init_timer() -> void {
     // disable legacy pic: mask all interrupts on master (0x21) and slave (0xa1)
     // essential to prevent "spurious" interrupts from deprecated hardware
     outb(0x21, 0xff);
@@ -565,7 +562,7 @@ extern "C" auto kernel_on_keyboard() -> void {
         serial_print("|");
 
         // pass scancode to the operating system's input layer
-        osca_on_keyboard(scancode);
+        osca::on_keyboard(scancode);
     }
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
@@ -579,7 +576,7 @@ extern "C" auto kernel_on_keyboard() -> void {
 extern "C" auto kernel_on_timer() -> void {
     // notify the os layer that a tick has occurred
     // typically used for task switching, sleep timers, or profiling
-    osca_on_timer();
+    osca::on_timer();
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
     // essential to clear the 'in-service' bit in the lapic
@@ -595,7 +592,7 @@ extern "C" auto kernel_on_timer() -> void {
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
-                 : "r"(&stack[sizeof(stack)] - 8), "r"(osca)
+                 : "r"(&stack[sizeof(stack)] - 8), "r"(osca::start)
                  : "memory");
     // note: why -8?
     // the x86-64 system v abi requires the stack to be 16-byte aligned at the
@@ -626,7 +623,7 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     init_idt();
 
     serial_print("init_timer\n");
-    init_apic_timer();
+    init_timer();
 
     serial_print("init_keyboard\n");
     init_keyboard();

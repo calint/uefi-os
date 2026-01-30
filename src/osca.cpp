@@ -84,7 +84,8 @@ auto test_simd_support() -> void {
 }
 } // namespace
 
-[[noreturn]] auto osca() -> void {
+namespace osca {
+[[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
 
     auto di = frame_buffer.pixels;
@@ -134,7 +135,7 @@ auto test_simd_support() -> void {
     }
 }
 
-auto osca_on_timer() -> void {
+auto on_timer() -> void {
     auto static tick = 0u;
 
     serial_print(".");
@@ -147,7 +148,7 @@ auto osca_on_timer() -> void {
     }
 }
 
-auto osca_on_keyboard(u8 scancode) -> void {
+auto on_keyboard(u8 scancode) -> void {
     auto static kbd_intr_total = 0ull;
 
     kbd_intr_total++;
@@ -175,3 +176,4 @@ auto osca_on_keyboard(u8 scancode) -> void {
         }
     }
 }
+} // namespace osca

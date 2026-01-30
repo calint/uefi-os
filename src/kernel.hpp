@@ -87,4 +87,8 @@ auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 extern "C" [[noreturn]] auto kernel_start() -> void;
 
-[[noreturn]] auto osca() -> void;
+namespace osca {
+[[noreturn]] auto start() -> void;
+auto on_keyboard(u8 scancode) -> void;
+auto on_timer() -> void;
+} // namespace osca
