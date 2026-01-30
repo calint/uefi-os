@@ -3,43 +3,39 @@ set -e
 
 mkdir -p esp/EFI/BOOT
 
-FLAGS="-Wfatal-errors -Werror"
-WARNINGS="-Weverything -Wno-c++98-compat -Wno-reserved-macro-identifier \
-    -Wno-reserved-identifier -Wno-reserved-macro-identifier \
-    -Wno-unsafe-buffer-usage -Wno-pre-c++20-compat-pedantic \
-    -Wno-missing-prototypes -Wno-padded -Wno-c++98-compat-pedantic \
-    -Wno-language-extension-token -Wno-undef -Wno-unused-variable \
-    -Wno-unused-function -Wno-c99-extensions"
+FLAGS="-std=c++26 -target x86_64-unknown-windows-msvc  -Wfatal-errors -Werror"
+ASMFLAGS=""
+CPPFLAGS="-ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone \
+    -fno-exceptions -fno-rtti"
+WARNINGS="-Weverything \
+    -Wno-c++98-compat \
+    -Wno-c++98-compat-pedantic \
+    -Wno-pre-c++20-compat-pedantic \
+    -Wno-c99-extensions \
+    -Wno-reserved-identifier \
+    -Wno-reserved-macro-identifier \
+    -Wno-unsafe-buffer-usage \
+    -Wno-missing-prototypes \
+    -Wno-language-extension-token \
+    -Wno-undef \
+    -Wno-padded \
+    -Wno-unused-variable \
+    -Wno-unused-function \
+    "
 
-clang++ -std=c++26 -target x86_64-unknown-windows-msvc \
-    -ffreestanding -fno-stack-protector -mno-red-zone \
-    -fno-builtin \
+clang++ $FLAGS $CPPFLAGS $WARNINGS \
     -I /usr/include/efi/ \
-    $FLAGS \
-    $WARNINGS \
     -c src/uefi.cpp -o uefi.o
 
-clang++ -std=c+26 -target x86_64-unknown-windows-msvc \
-    $FLAGS \
-    $WARNINGS \
+clang++ $FLAGS $ASMFLAGS $WARNINGS \
     -c src/kernel_asm.s -o kernel_asm.o
 
-clang++ -std=c++26 -target x86_64-unknown-windows-msvc \
-    -ffreestanding -fno-stack-protector -mno-red-zone \
-    -fno-exceptions -fno-rtti \
-    -fno-builtin \
+clang++ $FLAGS $CPPFLAGS $WARNINGS \
     -I /usr/include/efi/ \
-    $FLAGS \
-    $WARNINGS \
     -c src/kernel.cpp -o kernel.o
 
-clang++ -std=c++26 -target x86_64-unknown-windows-msvc \
-    -ffreestanding -fno-stack-protector -mno-red-zone \
-    -fno-exceptions -fno-rtti \
-    -fno-builtin \
+clang++ $FLAGS $CPPFLAGS $WARNINGS \
     -I /usr/include/efi/ \
-    $FLAGS \
-    $WARNINGS \
     -c src/osca.cpp -o osca.o
 
 clang -target x86_64-unknown-windows-msvc \

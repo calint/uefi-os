@@ -251,9 +251,10 @@ auto init_paging() -> void {
     // RAM: Present + Writable
     auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
 
-    // MMIO: Present + Writable + Cache Disable (Uncached)
-    // Used for APIC to ensure we don't read stale register values.
+    // MMIO: Present + Writable + Cache Disable
+    // used for APIC to ensure not reading stale register values
     auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
+
     // map uefi allocated memory
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
@@ -289,7 +290,8 @@ auto init_paging() -> void {
     serial_print("* frame buffer (write-combining)\n");
     auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(u64(frame_buffer.pixels),
-              frame_buffer.stride * frame_buffer.height * 4, FB_FLAGS);
+              frame_buffer.stride * frame_buffer.height * sizeof(u32),
+              FB_FLAGS);
 
     serial_print("* heap\n");
     map_range(heap_start, heap_size, RAM_FLAGS);
