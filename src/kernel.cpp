@@ -1,6 +1,5 @@
 #include <efi.h>
 
-#include "efidef.h"
 #include "kernel.hpp"
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
