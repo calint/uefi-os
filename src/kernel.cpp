@@ -173,6 +173,30 @@ auto get_next_table(u64* table, u64 index) -> u64* {
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
 alignas(4096) u64 boot_pml4[512];
 
+// page table entry (PTE) / page directory entry (PDE) bits
+// present (P): must be 1 to be a valid entry
+auto constexpr PAGE_P = (1ull << 0);
+// read/write (R/W): 0 = read-only, 1 = read/write
+auto constexpr PAGE_RW = (1ull << 1);
+// page-level write-through (PWT): bit 0 of PAT index
+auto constexpr PAGE_PWT = (1ull << 3);
+// page-level cache disable (PCD): bit 1 of PAT index
+auto constexpr PAGE_PCD = (1ull << 4);
+// page size (PS): 1 in PDE (level 2) indicates 2MB huge page
+auto constexpr PAGE_PS = (1ull << 7);
+
+// PAT (page attribute table) bit locations
+// the PAT bit is the "high bit" (bit 2) of the 3-bit PAT index
+// its position changes based on the page size!
+// PAT bit for 4KB PTEs
+auto constexpr PAGE_PAT_4KB = (1ull << 7);
+// PAT bit for 2MB PDEs
+auto constexpr PAGE_PAT_2MB = (1ull << 12);
+
+// bit 12 in 'flags' parameter is a software-only signal that the caller wants
+// write-combining (PAT index 4)
+auto constexpr USE_PAT_WC = (1ull << 12);
+
 auto map_range(u64 phys, u64 size, u64 flags) -> bool {
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
@@ -186,21 +210,33 @@ auto map_range(u64 phys, u64 size, u64 flags) -> bool {
         auto pdp = get_next_table(boot_pml4, pml4_idx);
         auto pd = get_next_table(pdp, pdp_idx);
 
-        // use 2MB huge page if 2MB aligned and enough space remains
         if ((addr % 0x200000 == 0) && (end - addr >= 0x200000)) {
-            pd[pd_idx] = addr | flags | 0x80; // 0x80 = page size bit
-            addr += 0x200000;
-        } else {
-            // fallback to 4KB page
-            auto pt = get_next_table(pd, pd_idx);
+            // 2MB page
+            auto entry_flags = flags | PAGE_PS;
 
-            // adjust pat bit: for 2MB it's bit 12, for 4KB it's bit 7
-            auto k4_flags = flags & ~0x80ull; // Clear PS bit
-            if (flags & 0x1000) {
-                k4_flags = (k4_flags & ~0x1000ull) | 0x80ull;
+            if (flags & USE_PAT_WC) {
+                // PAT index 4 (binary 100); index = [PAT|PCD|PWT]
+                entry_flags &= ~PAGE_PWT;
+                entry_flags &= ~PAGE_PCD;
+                entry_flags |= PAGE_PAT_2MB;
             }
 
-            pt[pt_idx] = addr | k4_flags;
+            pd[pd_idx] = addr | entry_flags;
+            addr += 0x200000;
+        } else {
+            // 4KB page
+            auto pt = get_next_table(pd, pd_idx);
+            auto entry_flags = flags;
+
+            if (flags & USE_PAT_WC) {
+                // Goa
+                entry_flags &= ~PAGE_PWT;
+                entry_flags &= ~PAGE_PCD;
+                entry_flags &= ~USE_PAT_WC;
+                entry_flags |= PAGE_PAT_4KB;
+            }
+
+            pt[pt_idx] = addr | entry_flags;
             addr += 0x1000;
         }
     }
@@ -212,9 +248,12 @@ auto init_paging() -> void {
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
 
-    auto constexpr MMIO_FLAGS = 0x13;
-    // 0x01 present | 0x02 writable | 0x10 pcd (uncached)
+    // RAM: Present + Writable
+    auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
 
+    // MMIO: Present + Writable + Cache Disable (Uncached)
+    // Used for APIC to ensure we don't read stale register values.
+    auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
     // map uefi allocated memory
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
@@ -225,7 +264,7 @@ auto init_paging() -> void {
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
             serial_print("* acpi tables\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
                    (d->Type == EfiBootServicesCode) ||
                    (d->Type == EfiBootServicesData)) {
@@ -233,31 +272,29 @@ auto init_paging() -> void {
             // note: EfiBootServiceCode and Data is mapped because before osca
             //       is started the stack is there
             serial_print("* loaded kernel and current stack\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
         } else if (d->Type == EfiConventionalMemory) {
             serial_print("* memory\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, 3);
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
         } else if (d->Type == EfiMemoryMappedIO) {
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
 
-    serial_print("* apic\n");
+    serial_print("* apic mmio\n");
     map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
     map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
 
-    serial_print("* frame buffer\n");
+    serial_print("* frame buffer (write-combining)\n");
+    auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(u64(frame_buffer.pixels),
-              frame_buffer.stride * frame_buffer.height * 4, 0x101b);
-    // flags:
-    // 0x01 (present) | 0x02 (rw) | 0x08 (pwt) | 0x10 (pcd) | 0x80 (huge) |
-    // 0x1000 (pat bit for 2mb) this points to pat entry 4 (wc) 0x01 (present) |
+              frame_buffer.stride * frame_buffer.height * 4, FB_FLAGS);
 
     serial_print("* heap\n");
-    map_range(heap_start, heap_size, 3);
+    map_range(heap_start, heap_size, RAM_FLAGS);
 
-    // load CR3 to activate the dynamic tables
+    // activate the new tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
