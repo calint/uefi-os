@@ -87,8 +87,275 @@ auto init_sse() -> void {
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
-// pat (page attribute table) init
-auto init_pat() -> void {
+// gdt (global descriptor table) init
+auto init_gdt() -> void {
+    // legacy x86 format; mostly ignored in 64-bit but fields must exist
+    struct [[gnu::packed]] GDTEntry {
+        u16 limit_low;
+        u16 base_low;
+        u8 base_middle;
+        u8 access;      // p(1) dpl(2) s(1) type(4)
+        u8 granularity; // g(1) d/b(1) l(1) avl(1) limit_high(4)
+        u8 base_high;
+    };
+
+    struct [[gnu::packed]] GDT {
+        GDTEntry null; // selector 0x00: required null descriptor
+        GDTEntry code; // selector 0x08: kernel code (exec/read)
+        GDTEntry data; // selector 0x10: kernel data (read/write)
+    };
+
+    // code access 0x9a: 10011010b (present, ring 0, code, exec/read)
+    // code gran 0x20: 00100000b (l-bit set: marks 64-bit long mode)
+    // data access 0x92: 10010010b (present, ring 0, data, read/write)
+    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
+                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
+                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
+
+    // the 10-byte pointer passed to the lgdt instruction
+    struct [[gnu::packed]] GDTDescriptor {
+        u16 size;
+        u64 offset;
+    };
+
+    auto descriptor =
+        GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
+
+    asm volatile("lgdt %0\n\t"         // load gdt register (gdtr)
+                 "mov $0x10, %%ax\n\t" // 0x10 points to data descriptor
+                 "mov %%ax, %%ds\n\t"  // load data segment
+                 "mov %%ax, %%es\n\t"  // load extra segment
+                 "mov %%ax, %%ss\n\t"  // load stack segment
+                 "pushq $0x08\n\t"     // push code selector (0x08) for lretq
+                 "lea 1f(%%rip), %%rax\n\t" // load address of label '1'
+                 "pushq %%rax\n\t"          // push rip for lretq
+                 "lretq\n\t" // far return: pops rip and cs to flush pipelin
+                 "1:\n\t"    // now running with new cs/ds/ss
+                 :
+                 : "m"(descriptor)
+                 : "rax", "memory");
+}
+
+// heap (bump allocator) init
+// find biggest chunk of free memory and use it as heap
+auto make_heap() -> Heap {
+    // find largest contiguous chunk of memory
+    auto largest_chunk_size = 0ull;
+    auto aligned_start = 0ull;
+    auto aligned_size = 0ull;
+
+    // parse uefi memory descriptors
+    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+
+    for (auto i = 0u; i < num_descriptors; ++i) {
+        // step by uefi-defined descriptor size
+        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            u64(desc) + (i * memory_map.descriptor_size));
+
+        // usable ram not reserved by firmware/acpi
+        if (d->Type == EfiConventionalMemory) {
+            auto chunk_start = d->PhysicalStart;
+            auto chunk_size = d->NumberOfPages * 4096;
+
+            // find contiguous maximum for the heap
+            if (chunk_size > largest_chunk_size) {
+                largest_chunk_size = chunk_size;
+
+                // 4k alignment: mask lower 12 bits to ensure page boundary
+                aligned_start = (chunk_start + 4095) & ~4095ull;
+                aligned_size = (chunk_size + 4095) & ~4095ull;
+            }
+        }
+    }
+
+    return {reinterpret_cast<void*>(aligned_start), aligned_size};
+}
+
+// pops a zeroed 4k buffer from the heap for structural paging
+auto allocate_page() -> void* {
+    // ensure heap has at least one 4k page remaining
+    if (heap.size < 4096) {
+        serial_print("error: out of memory for paging\n");
+        panic(0xff00'0000); // red screen: fatal
+    }
+
+    auto ptr = heap.start;
+    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
+    heap.size -= 4096;
+    memset(ptr, 0, 4096);
+    return ptr;
+}
+
+// page table traversal
+// returns pointer to the next level in paging hierarchy
+// allocates a new zeroed page if the entry is not present
+auto get_next_table(u64* table, u64 index) -> u64* {
+    // check bit 0 (p): present
+    if (!(table[index] & 0x01)) {
+        // create next level only when needed
+        void* next = allocate_page(); // zeroed 4KB chunk
+        // link new table: set physical address and flags
+        // 0x03: present | writable
+        table[index] = reinterpret_cast<uptr>(next) | 0x03;
+    }
+    // mask lower 12 bits: remove flags to get pure physical address
+    // x64 paging structures are always 4k aligned
+    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
+}
+
+// the top-level PML4 (512GB/entry) potentially covering 256 TB
+alignas(4096) u64 boot_pml4[512];
+
+// page table entry (pte) / page directory entry (pde) bits
+// present (p): must be 1 to be a valid entry
+auto constexpr PAGE_P = (1ull << 0);
+
+// read/write (r/w): 0 = read-only, 1 = read/write
+auto constexpr PAGE_RW = (1ull << 1);
+
+// page-level write-through (pwt): bit 0 of pat index
+auto constexpr PAGE_PWT = (1ull << 3);
+
+// page-level cache disable (pcd): bit 1 of pat index
+auto constexpr PAGE_PCD = (1ull << 4);
+
+// page size (ps): 1 in pde (level 2) indicates 2mb huge page
+auto constexpr PAGE_PS = (1ull << 7);
+
+// pat (page attribute table) bit locations
+// the pat bit is the "high bit" (bit 2) of the 3-bit pat index
+// its position changes based on the page size!
+
+// pat bit for 4kb ptes
+auto constexpr PAGE_PAT_4KB = (1ull << 7);
+
+// pat bit for 2mb pdes
+auto constexpr PAGE_PAT_2MB = (1ull << 12);
+
+// bit 12 in 'flags' parameter is a software-only signal that the caller wants
+// write-combining (pat index 4)
+auto constexpr USE_PAT_WC = (1ull << 12);
+
+// range mapping with hybrid page sizes
+// creates identity mappings with optimized page sizes
+auto map_range(u64 phys, u64 size, u64 flags) -> void {
+    // page alignment: floor start and ceil end to 4kb boundaries
+    auto addr = phys & ~0xfffull;
+    auto end = (phys + size + 4095) & ~0xfffull;
+
+    while (addr < end) {
+        // x64 virtual address bit-fields for table indexing
+        // page map level 4
+        auto pml4_idx = (addr >> 39) & 0x1ff;
+        // page directory pointer
+        auto pdp_idx = (addr >> 30) & 0x1ff;
+        // page directory
+        auto pd_idx = (addr >> 21) & 0x1ff;
+        // page table
+        auto pt_idx = (addr >> 12) & 0x1ff;
+
+        // traverse hierarchy: allocate lower tables as needed
+        auto pdp = get_next_table(boot_pml4, pml4_idx);
+        auto pd = get_next_table(pdp, pdp_idx);
+
+        // check if 2mb mapping is possible: aligned start and sufficient size
+        if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
+            // huge page: ps (page size) bit = 1 in page directory entry
+            auto entry_flags = flags | PAGE_PS;
+
+            if (flags & USE_PAT_WC) {
+                // write-combining (index 4): binary 100
+                // for 2mb pages, pat bit is bit 12
+                entry_flags &= ~PAGE_PWT;
+                entry_flags &= ~PAGE_PCD;
+                entry_flags |= PAGE_PAT_2MB;
+            }
+
+            pd[pd_idx] = addr | entry_flags;
+            addr += 0x20'0000; // jump by 2mb
+        } else {
+            // standard page: leaf exists at level 1 (pt)
+            auto pt = get_next_table(pd, pd_idx);
+            auto entry_flags = flags;
+
+            if (flags & USE_PAT_WC) {
+                // write-combining (index 4): binary 100
+                // for 4kb pages, pat bit is bit 7
+                entry_flags &= ~PAGE_PWT;
+                entry_flags &= ~PAGE_PCD;
+                entry_flags &= ~USE_PAT_WC;
+                entry_flags |= PAGE_PAT_4KB;
+            }
+
+            pt[pt_idx] = addr | entry_flags;
+            addr += 0x1000;
+        }
+    }
+}
+
+// identity maps uefi memory, sets pat, and activates cr3
+auto init_paging() -> void {
+    // preserve heap metadata before allocating page tables
+    auto heap_start = u64(heap.start);
+    auto heap_size = heap.size;
+
+    // page attribute flags
+    // p: present; rw: read/write
+    auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
+
+    // pcd: page-level cache disable
+    // essential for mmio to avoid reading stale hardware register values
+    auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
+
+    // parse uefi memory map to identity-map system ram and firmware regions
+    auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    for (auto i = 0u; i < num_descriptors; ++i) {
+        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
+            u64(desc) + (i * memory_map.descriptor_size));
+
+        if ((d->Type == EfiACPIReclaimMemory) ||
+            (d->Type == EfiACPIMemoryNVS)) {
+            // acpi tables: must be mapped to parse hardware config later
+            serial_print("* acpi tables\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
+                   (d->Type == EfiBootServicesCode) ||
+                   (d->Type == EfiBootServicesData)) {
+            // kernel binary + current uefi stack
+            // note: EfiBootServiceCode and Data is mapped because current stack
+            //       is there
+            serial_print("* loaded kernel and current stack\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+        } else if (d->Type == EfiConventionalMemory) {
+            // general purpose ra
+            serial_print("* memory\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+        } else if (d->Type == EfiMemoryMappedIO) {
+            // generic hardware mmio regions
+            serial_print("* mmio region\n");
+            map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
+        }
+    }
+
+    serial_print("* apic mmio\n");
+    // map apic registers for interrupt handling
+    map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
+    map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
+
+    serial_print("* frame buffer\n");
+    // map frame buffer with write-combining (pat index 4)
+    auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
+    map_range(u64(frame_buffer.pixels),
+              frame_buffer.stride * frame_buffer.height * sizeof(u32),
+              FB_FLAGS);
+
+    serial_print("* heap\n");
+    // map the dynamic memory pool
+    map_range(heap_start, heap_size, RAM_FLAGS);
+
+    // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
     u32 low;
     u32 high;
@@ -106,266 +373,62 @@ auto init_pat() -> void {
     // wbinvd: write back and invalidate cache
     // ensures no stale cache lines exist after attribute change
     asm volatile("wbinvd" ::: "memory");
-}
-
-auto init_gdt() -> void {
-    struct [[gnu::packed]] GDTEntry {
-        u16 limit_low;
-        u16 base_low;
-        u8 base_middle;
-        u8 access;
-        u8 granularity;
-        u8 base_high;
-    };
-
-    struct [[gnu::packed]] GDT {
-        GDTEntry null;
-        GDTEntry code;
-        GDTEntry data;
-    };
-
-    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
-                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
-                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
-
-    struct [[gnu::packed]] GDTDescriptor {
-        u16 size;
-        u64 offset;
-    };
-
-    auto descriptor =
-        GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
-
-    asm volatile("lgdt %0\n\t"
-                 "mov $0x10, %%ax\n\t"
-                 "mov %%ax, %%ds\n\t"
-                 "mov %%ax, %%es\n\t"
-                 "mov %%ax, %%ss\n\t"
-                 "pushq $0x08\n\t"
-                 "lea 1f(%%rip), %%rax\n\t"
-                 "pushq %%rax\n\t"
-                 "lretq\n\t"
-                 "1:\n\t"
-                 :
-                 : "m"(descriptor)
-                 : "rax", "memory");
-}
-
-auto make_heap() -> Heap {
-    // find largest contiguous chunk of memory
-    auto largest_chunk_size = 0ull;
-    auto aligned_start = 0ull;
-    auto aligned_size = 0ull;
-    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
-    for (auto i = 0u; i < num_descriptors; ++i) {
-        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            u64(desc) + (i * memory_map.descriptor_size));
-
-        if (d->Type == EfiConventionalMemory) {
-            auto chunk_start = d->PhysicalStart;
-            auto chunk_size = d->NumberOfPages * 4096;
-            if (chunk_size > largest_chunk_size) {
-                largest_chunk_size = chunk_size;
-                aligned_start = (chunk_start + 4095) & ~4095ull;
-                aligned_size = (chunk_size + 4095) & ~4095ull;
-            }
-        }
-    }
-
-    return {reinterpret_cast<void*>(aligned_start), aligned_size};
-}
-
-auto allocate_page() -> void* {
-    if (heap.size < 4096) {
-        serial_print("error: out of memory for paging\n");
-        panic(0xff00'0000);
-    }
-    auto ptr = heap.start;
-    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
-    heap.size -= 4096;
-    memset(ptr, 0, 4096);
-    return ptr;
-}
-
-auto get_next_table(u64* table, u64 index) -> u64* {
-    if (!(table[index] & 0x01)) {
-        // page not present
-        void* next = allocate_page(); // zeroed 4KB chunk
-        table[index] =
-            reinterpret_cast<uptr>(next) | 0x03; // present | writable
-    }
-    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
-}
-
-// the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) u64 boot_pml4[512];
-
-// page table entry (PTE) / page directory entry (PDE) bits
-// present (P): must be 1 to be a valid entry
-auto constexpr PAGE_P = (1ull << 0);
-// read/write (R/W): 0 = read-only, 1 = read/write
-auto constexpr PAGE_RW = (1ull << 1);
-// page-level write-through (PWT): bit 0 of PAT index
-auto constexpr PAGE_PWT = (1ull << 3);
-// page-level cache disable (PCD): bit 1 of PAT index
-auto constexpr PAGE_PCD = (1ull << 4);
-// page size (PS): 1 in PDE (level 2) indicates 2MB huge page
-auto constexpr PAGE_PS = (1ull << 7);
-
-// PAT (page attribute table) bit locations
-// the PAT bit is the "high bit" (bit 2) of the 3-bit PAT index
-// its position changes based on the page size!
-// PAT bit for 4KB PTEs
-auto constexpr PAGE_PAT_4KB = (1ull << 7);
-// PAT bit for 2MB PDEs
-auto constexpr PAGE_PAT_2MB = (1ull << 12);
-
-// bit 12 in 'flags' parameter is a software-only signal that the caller wants
-// write-combining (PAT index 4)
-auto constexpr USE_PAT_WC = (1ull << 12);
-
-auto map_range(u64 phys, u64 size, u64 flags) -> bool {
-    // align to 4KB page
-    auto addr = phys & ~0xfffull;
-    auto end = (phys + size + 4095) & ~0xfffull;
-
-    while (addr < end) {
-        // page map level 4
-        auto pml4_idx = (addr >> 39) & 0x1ff;
-        // page directory pointer
-        auto pdp_idx = (addr >> 30) & 0x1ff;
-        // page directory
-        auto pd_idx = (addr >> 21) & 0x1ff;
-        // page table
-        auto pt_idx = (addr >> 12) & 0x1ff;
-
-        auto pdp = get_next_table(boot_pml4, pml4_idx);
-        auto pd = get_next_table(pdp, pdp_idx);
-
-        if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
-            // 2MB page
-            auto entry_flags = flags | PAGE_PS;
-
-            if (flags & USE_PAT_WC) {
-                // PAT index 4 (binary 100); index = [PAT|PCD|PWT]
-                entry_flags &= ~PAGE_PWT;
-                entry_flags &= ~PAGE_PCD;
-                entry_flags |= PAGE_PAT_2MB;
-            }
-
-            pd[pd_idx] = addr | entry_flags;
-            addr += 0x20'0000;
-        } else {
-            // 4KB page
-            auto pt = get_next_table(pd, pd_idx);
-            auto entry_flags = flags;
-
-            if (flags & USE_PAT_WC) {
-                entry_flags &= ~PAGE_PWT;
-                entry_flags &= ~PAGE_PCD;
-                entry_flags &= ~USE_PAT_WC;
-                entry_flags |= PAGE_PAT_4KB;
-            }
-
-            pt[pt_idx] = addr | entry_flags;
-            addr += 0x1000;
-        }
-    }
-    return true;
-}
-
-auto init_paging() -> void {
-    // save heap start before allocating pages
-    auto heap_start = u64(heap.start);
-    auto heap_size = heap.size;
-
-    // ram: present + writable
-    auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
-
-    // mmio: present + writable + cache disable
-    // used for apic to ensure not reading stale register values
-    auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
-
-    // map uefi allocated memory
-    auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
-    for (auto i = 0u; i < num_descriptors; ++i) {
-        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            u64(desc) + (i * memory_map.descriptor_size));
-
-        if ((d->Type == EfiACPIReclaimMemory) ||
-            (d->Type == EfiACPIMemoryNVS)) {
-            serial_print("* acpi tables\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
-                   (d->Type == EfiBootServicesCode) ||
-                   (d->Type == EfiBootServicesData)) {
-            // note: the kernel is loaded by uefi in EfiLoaderCode and Data
-            // note: EfiBootServiceCode and Data is mapped because before osca
-            //       is started the stack is there
-            serial_print("* loaded kernel and current stack\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-        } else if (d->Type == EfiConventionalMemory) {
-            serial_print("* memory\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-        } else if (d->Type == EfiMemoryMappedIO) {
-            serial_print("* mmio region\n");
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
-        }
-    }
-
-    serial_print("* apic mmio\n");
-    map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
-    map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
-
-    serial_print("* frame buffer (write-combining)\n");
-    auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
-    map_range(u64(frame_buffer.pixels),
-              frame_buffer.stride * frame_buffer.height * sizeof(u32),
-              FB_FLAGS);
-
-    serial_print("* heap\n");
-    map_range(heap_start, heap_size, RAM_FLAGS);
 
     // activate the new tables
     asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
 }
 
-// LAPIC timer runs at the speed of the CPU bus or a crystal oscillator, which
-// varies between machines
+// apic timer calibration
 auto calibrate_apic(u32 hz) -> u32 {
-    // tell PIT to wait ~10ms
-    // frequency is 1193182 hz. 10ms = 11931 ticks
-    outb(0x43, 0x30); // channel 0, lo/hi, mode 0
-    outb(0x40, 0x2b); // lo byte of 11931
-    outb(0x40, 0x2e); // hi byte of 11931
+    // pit channel 0: set to mode 0 (interrupt on terminal count)
+    // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e2b)
+    outb(0x43, 0x30); // control: ch0, lo/hi, mode 0, binary
+    outb(0x40, 0x2b); // divisor low byte
+    outb(0x40, 0x2e); // divisor high byte
 
-    // start lapic timer
+    // lapic initial count register (0x380): set to max
+    // timer begins counting down immediately
     apic.local[0x380 / 4] = 0xffff'ffff; // max count
 
-    // wait for pit to finish
+    // polling pit status via read-back command (0xe2)
+    // bit 7 is set when the pit terminal count is reached (10ms elapsed)
     auto status = 0;
     while (!(status & 0x80)) {
-        outb(0x43, 0xe2); // read back command
+        outb(0x43, 0xe2); // read-back status for ch0
         status = inb(0x40);
     }
+    // lapic current count register (0x390): read remaining ticks
     auto current_count = apic.local[0x390 / 4];
-
     auto ticks_per_10ms = 0xffff'ffff - current_count;
 
+    // calculate divisor: (ticks in 10ms * 100) / target_hz
+    // result is the initial count value for periodic interrupts
     return ticks_per_10ms * 100 / hz;
 }
 
+// disables legacy pic and starts lapic timer in periodic mode
 auto init_apic_timer() -> void {
-    // disable legacy pic
+    // disable legacy pic: mask all interrupts on master (0x21) and slave (0xa1)
+    // essential to prevent "spurious" interrupts from deprecated hardware
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
 
-    apic.local[0x0f0 / 4] = 0x1ff;          // software enable + spurious vector
-    apic.local[0x3e0 / 4] = 0x03;           // divide by 16
-    apic.local[0x320 / 4] = (1 << 17) | 32; // periodic mode + vector 32
-    apic.local[0x380 / 4] = calibrate_apic(2); // initial count
+    // svr (spurious interrupt vector register): software enable lapic
+    // 0x1ff: set bit 8 (apic software enable) and bits 0-7 (vector 255)
+    apic.local[0x0f0 / 4] = 0x1ff;
+
+    // dcr (divide configuration register): set timer divisor
+    // 0x03: divide by 16 (timer increments every 16 bus cycles)
+    apic.local[0x3e0 / 4] = 0x03;
+
+    // lvt timer register: configure mode and vector
+    // bit 17 (1 << 17): periodic mode (auto-reloads count)
+    // bits 0-7 (32): vector index in idt for timer interrupts
+    apic.local[0x320 / 4] = (1 << 17) | 32;
+
+    // icr (initial count register): set the countdown start value
+    // uses calibration logic to determine 2hz (0.5s interval)
+    apic.local[0x380 / 4] = calibrate_apic(2);
 }
 
 auto io_apic_write(u32 reg, u32 val) -> void {
@@ -504,9 +567,6 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
 
     serial_print("enable_sse\n");
     init_sse();
-
-    serial_print("init_pat\n");
-    init_pat();
 
     serial_print("init_gdt\n");
     init_gdt();
