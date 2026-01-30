@@ -3,24 +3,30 @@
 #include "kernel.hpp"
 
 namespace {
-// helper functions
-
+// efi guid comparison
+// performs a robust byte-by-byte comparison of two efi guids
 auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
-    // note: byte compare avoids alignment, padding, and aliasing issues
+    // casting to u8* (byte pointer) ensures we ignore structural padding
+    // and avoids potential alignment faults on strict architectures
     auto p1 = reinterpret_cast<u8 const*>(g1);
     auto p2 = reinterpret_cast<u8 const*>(g2);
+
     for (auto i = 0u; i < sizeof(EFI_GUID); ++i) {
         if (p1[i] != p2[i]) {
             return false;
         }
     }
+
     return true;
 }
 
+// type-safe pointer arithmetic
 template <typename T> auto ptr_offset(void const* ptr, u64 bytes) -> T* {
     return reinterpret_cast<T*>(reinterpret_cast<uptr>(ptr) + bytes);
 }
 
+// uefi console output
+// high-level wrapper for the uefi boot-time text console
 auto inline console_print(EFI_SYSTEM_TABLE* sys, char16_t const* s) -> void {
     sys->ConOut->OutputString(
         sys->ConOut, reinterpret_cast<CHAR16*>(const_cast<char16_t*>(s)));
@@ -34,6 +40,7 @@ auto inline console_print(EFI_SYSTEM_TABLE* sys, char16_t const* s) -> void {
 // - firmware is part of the trusted computing base
 // - failure == abort, no recovery paths
 
+// the uefi entry point
 extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     -> EFI_STATUS {
 
@@ -47,6 +54,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // get frame buffer config
     //
 
+    // locate the gop (graphics output protocol) to get a linear frame buffer
     auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
     auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
     if (bs->LocateProtocol(&graphics_guid, nullptr,
@@ -54,6 +62,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         console_print(sys, u"abort: failed to get frame buffer\n");
         return EFI_ABORTED;
     }
+
+    // store dimensions and address for the kernel's future renderer
     frame_buffer = {.pixels =
                         reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
                     .width = gop->Mode->Info->HorizontalResolution,
@@ -73,19 +83,18 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         u8 revision;
         u32 rsdt_address;
         u32 length;
-        u64 xsdt_address; // 64-bit pointer to the XSDT
+        u64 xsdt_address;
         u8 extended_checksum;
         u8 reserved[3];
     };
     RSDP* rsdp = nullptr;
     auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
-        if (!guids_equal(&sys->ConfigurationTable[i].VendorGuid,
-                         &acpi_20_guid)) {
-            continue;
+        if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
+                        &acpi_20_guid)) {
+            rsdp = static_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
+            break;
         }
-        rsdp = static_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
-        break;
     }
     if (!rsdp) {
         console_print(sys, u"abort: no ACPI 2.0+ RSDP\n");
@@ -132,6 +141,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto io_apic_count = 0u;
 
     // find apic values and keyboard configuration
+    // parse the madt (multiple apic description table) to route interrupts
     for (auto i = 0u; i < entries; ++i) {
         auto header = reinterpret_cast<SDTHeader*>(ptrs[i]);
         auto constexpr APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
@@ -143,7 +153,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 SDTHeader header;
                 u32 lapic_address;
                 u32 flags;
-                u8 entries[]; // Start of variable-length structures
+                u8 entries[];
             };
             auto madt = reinterpret_cast<MADT*>(header);
 
@@ -160,7 +170,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
                 switch (entry->type) {
 
-                // I/O APIC: physical MMIO address and GSI range for an external
+                // i/o apic: physical mmio address and gsi range for an external
                 // interrupt controller
                 case 1: {
                     if (io_apic_count >= 8) {
@@ -174,17 +184,19 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     break;
                 }
 
-                // Multiple APIC Description Table: Interrupt Source Override
+                // multiple apic description table: interrupt source override
                 case 2: {
                     struct [[gnu::packed]] MADT_ISO {
                         u8 type;   // 2
                         u8 length; // 10
-                        u8 bus;    // 0 (ISA)
-                        u8 source; // The IRQ number (1 for keyboard)
-                        u32 gsi;   // The Global System Interrupt (IO APIC pin)
-                        u16 flags; // Polarity and Trigger Mode
+                        u8 bus;    // 0 (isa)
+                        u8 source; // the irq number (1 for keyboard)
+                        u32 gsi;   // the global system interrupt (io apic pin)
+                        u16 flags; // polarity and trigger mode
                     };
                     auto iso = reinterpret_cast<MADT_ISO*>(curr);
+
+                    // check for keyboard irq
                     if (iso->source == 1) {
                         console_print(sys, u"info: found keyboard config\n");
                         keyboard_config.gsi = iso->gsi;
@@ -201,7 +213,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     break;
                 }
 
-                // APIC Address Override
+                // apic address override
                 case 5: {
                     struct [[gnu::packed]] MADT_LAPIC_Override {
                         u8 type;
@@ -218,6 +230,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 default:
                     break;
                 }
+
                 if (entry->length == 0) {
                     // just in case
                     break;
