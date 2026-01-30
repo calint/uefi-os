@@ -63,11 +63,12 @@ auto init_sse() -> void {
 }
 
 auto init_pat() -> void {
-    u32 low, high;
     // read the current pat msr (0x277)
+    u32 low;
+    u32 high;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
-    // the pat is an array of eight 8-bit records.
+    // the pat is an array of eight 8-bit records
     // set pa4 (bits 32-34 in the 64-bit msr, or bits 0-2 in 'high') to 0x01,
     // which is the value for write-combining
     high = (high & ~0x07u) | 0x01u;
