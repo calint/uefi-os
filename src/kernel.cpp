@@ -889,7 +889,7 @@ auto init_cores() {
     serial_print("init_keyboard\n");
     init_keyboard();
 
-    serial_print("kernel_start_cores\n");
+    serial_print("init_cores\n");
     init_cores();
 
     serial_print("osca_start\n");
