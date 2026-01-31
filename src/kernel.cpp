@@ -646,7 +646,7 @@ extern "C" auto kernel_on_timer() -> void {
 // verify low memory is actually usable
 auto verify_low_memory() -> bool {
     // test critical addresses
-    u64 test_addrs[] = {0x8000, 0x10000, 0x11000, 0x12000, 0x14000};
+    u64 test_addrs[] = {0x8000, 0x1'0000, 0x1'1000, 0x1'2000, 0x1'3000};
 
     for (auto addr : test_addrs) {
         volatile auto ptr = reinterpret_cast<volatile u32*>(addr);
