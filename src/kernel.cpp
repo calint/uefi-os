@@ -749,40 +749,42 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void) -> void {
-    auto constexpr base = uptr(0x8000);
-
+auto run_core(u64 trampoline_dest_addr, u64 bridge_pml4, u64 stack_addr,
+              auto (*task)()->void) -> void {
     // calculate size using the addresses of the labels
     auto start_addr = uptr(kernel_asm_run_core_start);
     auto end_addr = uptr(kernel_asm_run_core_end);
     auto code_size = end_addr - start_addr;
 
     // copy the code.
-    memcpy(reinterpret_cast<void*>(base), kernel_asm_run_core_start, code_size);
+    memcpy(reinterpret_cast<void*>(trampoline_dest_addr),
+           kernel_asm_run_core_start, code_size);
 
     // calculate the offset of the config data relative to the start
     auto config_label_addr = uptr(kernel_asm_run_core_config);
     auto config_offset = config_label_addr - start_addr;
 
-    // get the pointer to the config struct within the 0x8000 memory area
     struct [[gnu::packed]] TrampolineConfig {
         u64 bridge_pml4;
-        u64 stack_address;
+        u64 stack_addr;
         u64 entry_point;
         u64 final_pml4;
     };
-    auto config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
+    auto config = reinterpret_cast<TrampolineConfig*>(trampoline_dest_addr +
+                                                      config_offset);
 
     // fill the values
-    config->bridge_pml4 = pml4_phys;
-    config->stack_address = stack_phys;
-    config->entry_point = u64(target);
+    config->bridge_pml4 = bridge_pml4;
+    config->stack_addr = stack_addr;
+    config->entry_point = u64(task);
     config->final_pml4 = u64(boot_pml4);
 
     // ensure the data is actually in ram before we kick the ap
     asm volatile("mfence" ::: "memory");
     asm volatile("wbinvd" ::: "memory");
 }
+
+auto constexpr TRAMPOLINE_DEST_ADDR = 0x8000;
 
 auto init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
@@ -812,7 +814,7 @@ auto init_cores() {
         }
 
         // visual: bsp is starting to process core i (yellow)
-        fill_rect(0, i * 15, 10, 10, 0xFFFFFF00);
+        fill_rect(0, i * 15, 10, 10, 0xffffff00);
         ap_boot_flag = 0;
         asm volatile("mfence" ::: "memory");
 
@@ -821,13 +823,13 @@ auto init_cores() {
         auto stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
 
         // prepare the trampoline with the target function
-        start_task(u64(bridge_pml4), stack_top, ap_main);
+        run_core(0x8000, u64(bridge_pml4), stack_top, ap_main);
 
         // visual: sipi sent (orange)
-        fill_rect(10, i * 15, 10, 10, 0xFFFFa500);
+        fill_rect(10, i * 15, 10, 10, 0xffffa500);
 
         // send the init-sipi-sipi sequence via the apic
-        send_init_sipi(cores[i].apic_id, 0x8000);
+        send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST_ADDR);
 
         // visual: bsp entered wait loop (blue)
         fill_rect(20, i * 15, 10, 10, 0x0000ffff);

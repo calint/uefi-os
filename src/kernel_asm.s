@@ -64,12 +64,16 @@ kernel_asm_keyboard_handler:
     iretq
 
 //
-// assembler code used to start running on a core
+// used by kernel to launch code on a core 
 //
-.set TRAMPOLINE_BASE, 0x8000
+
 
 .code16
 kernel_asm_run_core_start:
+.entry:
+    .set TRAMPOLINE_BASE, 0x8000
+    .set CONFIG_OFFSET, kernel_asm_run_core_config - kernel_asm_run_core_start
+
     cli
     xorw %ax, %ax
     movw %ax, %ds
@@ -78,7 +82,7 @@ kernel_asm_run_core_start:
     movw $TRAMPOLINE_BASE, %bx
 
     # calculate 16-bit offset of the gdt pointer relative to ds (which is 0)
-    movw $(early_gdt_ptr - kernel_asm_run_core_start), %si
+    movw $(.early_gdt_ptr - .entry), %si
     addw %bx, %si  # bx is 0x8000
     lgdt (%si)     # load gdt using the absolute address 0x8000 + offset
 
@@ -87,17 +91,17 @@ kernel_asm_run_core_start:
     movl %eax, %cr0
 
     # jump to 32-bit protected mode
-    ljmp $0x08, $(TRAMPOLINE_BASE + (protected_mode - kernel_asm_run_core_start))
+    ljmp $0x08, $(TRAMPOLINE_BASE + (.protected_mode - .entry))
 
 .code32
-protected_mode:
+.protected_mode:
     movw $0x10, %ax
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %ss
 
     # access the config struct via esi
-    movl $(TRAMPOLINE_BASE + (kernel_asm_run_core_config - kernel_asm_run_core_start)), %esi
+    movl $(TRAMPOLINE_BASE + CONFIG_OFFSET), %esi
 
     # enable pae
     movl %cr4, %eax
@@ -121,27 +125,29 @@ protected_mode:
 
     # inside protected_mode, after enabling paging: use selector 0x18 instead of
     # 0x08
-    ljmp $0x18, $(TRAMPOLINE_BASE + (long_mode_entry - kernel_asm_run_core_start))
+    ljmp $0x18, $(TRAMPOLINE_BASE + (.long_mode - .entry))
 
 .code64
-long_mode_entry:
+.long_mode:
     # point to the config struct
-    movq $(TRAMPOLINE_BASE + (kernel_asm_run_core_config - kernel_asm_run_core_start)), %rsi
+    movq $(TRAMPOLINE_BASE + CONFIG_OFFSET), %rsi
   
-    # We are currently on the Bridge (0x10000). 
-    # Now we switch to the REAL kernel tables that map > 4GB.
+    # currently using bridge paging at 0x1'0000 
+    # switch to the real kernel tables
     movq 24(%rsi), %rax   # 24 = offset of final_pml4
-    movq %rax, %cr3       # CPU can now see the high-memory kernel!
+    movq %rax, %cr3
 
-    # setup segments and stack
+    # setup segments
     xorl %eax, %eax
     movw %ax, %ds
     movw %ax, %es
-    movq 8(%rsi), %rsp
+
+    # setup stack
+    movq 8(%rsi), %rsp    # 8 = offset of stack pointer
     movq %rsp, %rbp
 
-    # now the call target
-    movq 16(%rsi), %rax
+    # call target
+    movq 16(%rsi), %rax   # 16 = offset of target pointer
     call *%rax
 
 .halt:
@@ -149,15 +155,15 @@ long_mode_entry:
     jmp .halt
 
 .align 16
-early_gdt:
+.early_gdt:
     .quad 0x0000000000000000 # null
     .quad 0x00cf9a000000ffff # 0x08: 32-bit code (for protected_mode)
     .quad 0x00cf92000000ffff # 0x10: 32-bit data
     .quad 0x00af9a000000ffff # 0x18: 64-bit code (L-bit set for long_mode_entry)
 
-early_gdt_ptr:
-    .word . - early_gdt - 1
-    .long TRAMPOLINE_BASE + (early_gdt - kernel_asm_run_core_start)
+.early_gdt_ptr:
+    .word . - .early_gdt - 1
+    .long TRAMPOLINE_BASE + (.early_gdt - .entry)
 
 .align 16
 kernel_asm_run_core_config:
