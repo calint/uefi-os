@@ -894,7 +894,4 @@ auto init_cores() {
 
     serial_print("osca_start\n");
     osca_start();
-    // while (true) {
-    //     asm volatile("hlt");
-    // }
 }
