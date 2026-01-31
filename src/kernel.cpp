@@ -745,23 +745,23 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 }
 
 // addressed in the assembler code
-extern "C" u8 trampoline_start[];
-extern "C" u8 trampoline_end[];
-extern "C" u8 trampoline_config_data[];
+extern "C" u8 kernel_asm_run_core_start[];
+extern "C" u8 kernel_asm_run_core_end[];
+extern "C" u8 kernel_asm_run_core_config[];
 
 auto start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void) -> void {
     auto constexpr base = uptr(0x8000);
 
     // calculate size using the addresses of the labels
-    auto start_addr = uptr(trampoline_start);
-    auto end_addr = uptr(trampoline_end);
+    auto start_addr = uptr(kernel_asm_run_core_start);
+    auto end_addr = uptr(kernel_asm_run_core_end);
     auto code_size = end_addr - start_addr;
 
     // copy the code.
-    memcpy(reinterpret_cast<void*>(base), trampoline_start, code_size);
+    memcpy(reinterpret_cast<void*>(base), kernel_asm_run_core_start, code_size);
 
     // calculate the offset of the config data relative to the start
-    auto config_label_addr = uptr(trampoline_config_data);
+    auto config_label_addr = uptr(kernel_asm_run_core_config);
     auto config_offset = config_label_addr - start_addr;
 
     // get the pointer to the config struct within the 0x8000 memory area
