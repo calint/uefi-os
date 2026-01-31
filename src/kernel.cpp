@@ -702,21 +702,7 @@ extern "C" volatile u8 ap_boot_flag = 0;
         }
     }
 
-    // draw a unique rectangle for this core
-    auto x_pos = core_index * 60;
-    auto y_pos = 300u;
-    auto color = 0xff00ff00 | (my_apic_id * 0x1234);
-
-    // interrupts_enable();
-
-    while (true) {
-        draw_rect(x_pos, y_pos, 50, 50, color);
-        ++color;
-        // ensure the writes are visible to the gpu
-        // mfence forces memory ordering, and wbinvd flushes all caches
-        asm volatile("mfence" ::: "memory");
-        asm volatile("wbinvd" ::: "memory");
-    }
+    osca::run_task(core_index);
 }
 
 auto delay_cycles(u64 cycles) -> void {
@@ -850,7 +836,6 @@ auto init_cores() {
         serial_print_hex_byte(cores[i].apic_id);
         serial_print("\n");
 
-        // mfence BEFORE reading flag
         while (ap_boot_flag == 0) {
             asm volatile("pause");
         }

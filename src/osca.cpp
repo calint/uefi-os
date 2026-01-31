@@ -82,6 +82,14 @@ auto test_simd_support() -> void {
         }
     }
 }
+
+auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+    for (u32 i = y; i < y + height; ++i) {
+        for (u32 j = x; j < x + width; ++j) {
+            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
+        }
+    }
+}
 } // namespace
 
 namespace osca {
@@ -177,6 +185,24 @@ auto on_keyboard(u8 scancode) -> void {
             frame_buffer.pixels[y * frame_buffer.stride + x] = u32(scancode)
                                                                << 16;
         }
+    }
+}
+
+auto run_task(u32 core_index) -> void {
+    // draw a unique rectangle for this core
+    auto x_pos = core_index * 60;
+    auto y_pos = 300u;
+    auto color = 0xff00ff00 | (core_index * 0x1234);
+
+    // interrupts_enable();
+
+    while (true) {
+        draw_rect(x_pos, y_pos, 50, 50, color);
+        ++color;
+        // ensure the writes are visible to the gpu
+        // mfence forces memory ordering, and wbinvd flushes all caches
+        asm volatile("mfence" ::: "memory");
+        asm volatile("wbinvd" ::: "memory");
     }
 }
 } // namespace osca
