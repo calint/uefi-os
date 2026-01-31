@@ -727,7 +727,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // wait 10ms for ap to settle after reset (intel requirement)
     delay_cycles(10'000'000);
 
-    // convert address to 4kb page vector; 0x8000 -> 0x08
+    // convert address to 4KB page vector; 0x8000 -> 0x08
     auto vector = (trampoline_address >> 12) & 0xff;
 
     // re-select target apic id
@@ -741,7 +741,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
         asm volatile("pause");
     }
 
-    // short 200us delay before retry (intel requirement)
+    // 200us delay before retry (intel requirement)
     delay_cycles(200'000);
 
     // re-select target apic id (intel requirement)
@@ -773,12 +773,10 @@ auto init_cores() {
     memset(protected_mode_pdpt, 0, 4096);
     memset(protected_mode_pd, 0, 4096);
 
-    // identity map the first 1GB covering 0x8000, 0x1'0000 -> 0x1'3000
+    // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'3000
     protected_mode_pml4[0] = 0x1'1000 | PAGE_P | PAGE_RW;
     protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
-    for (auto i = 0u; i < 32; ++i) {
-        protected_mode_pd[i] = (i * 0x20'0000) | PAGE_P | PAGE_RW | PAGE_PS;
-    }
+    protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
