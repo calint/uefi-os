@@ -696,21 +696,8 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
 // Each core lands here after the trampoline finishes
 [[noreturn]] auto ap_main() -> void {
     ap_boot_flag = 1;
-    asm volatile("mfence; wbinvd" ::: "memory");
-
-    // Don't call ANYTHING else - just spin
-    volatile auto x = 1;
-    while (x == 1) {
-        asm volatile("pause");
-    }
-
-    // 1. Swap from the 0x10000 table to the 0x1'4000'0000 table
-    // pml4_phys is your 64-bit global address
-    // asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
-
-    ap_boot_flag = 1;
-    asm volatile("mfence" ::: "memory"); // Ensure write is visible to BSP
-    asm volatile("wbinvd" ::: "memory"); // Extra aggressive flush
+    // asm volatile("mfence" ::: "memory"); // Ensure write is visible to BSP
+    // asm volatile("wbinvd" ::: "memory"); // Extra aggressive flush
 
     serial_print("AP\n");
 
@@ -791,6 +778,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
 auto kernel_start_cores() {
     serial_print("start cores\n");
+
     u64* bridge_pml4 = reinterpret_cast<u64*>(0x10000);
     u64* bridge_pdpt = reinterpret_cast<u64*>(0x11000);
     u64* bridge_pd = reinterpret_cast<u64*>(0x12000);
