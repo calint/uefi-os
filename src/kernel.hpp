@@ -103,6 +103,10 @@ auto inline mfence() -> void { asm volatile("mfence" ::: "memory"); }
 
 auto inline wbinvd() -> void { asm volatile("wbinvd" ::: "memory"); }
 
+auto inline clflush(volatile void* p) -> void {
+    asm volatile("clflush (%0)" : : "r"(p) : "memory");
+}
+
 [[noreturn]] auto kernel_start() -> void;
 
 namespace osca {

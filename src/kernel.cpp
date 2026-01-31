@@ -692,7 +692,10 @@ extern "C" volatile u8 ap_boot_flag = 0;
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
     ap_boot_flag = 1;
-    wbinvd();
+    mfence();
+    clflush(&ap_boot_flag);
+    mfence();
+    //--
 
     // ensure all stores are globally visible
     sfence();
@@ -709,7 +712,7 @@ extern "C" volatile u8 ap_boot_flag = 0;
     }
 
     // core not found
-    panic(0xffffff00);
+    panic(0xffffffff);
 }
 
 auto delay_cycles(u64 cycles) -> void {
@@ -837,7 +840,10 @@ auto init_cores() {
 
         // the core sets flag to 1 once it has started
         ap_boot_flag = 0;
-        wbinvd();
+        mfence();
+        clflush(&ap_boot_flag);
+        mfence();
+        //--
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
