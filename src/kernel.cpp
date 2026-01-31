@@ -338,7 +338,7 @@ auto init_paging() -> void {
 
     // flag that is true after scanning memory if trampoline and protected mode
     // pages are in conventional memory
-    auto trampoline_safe = false;
+    auto trampoline_memory_is_free = false;
 
     // page attribute flags
     // p: present; rw: read/write
@@ -376,7 +376,7 @@ auto init_paging() -> void {
             // check if range covers the trampoline and page table ram
             if (d->PhysicalStart <= 0x8000 &&
                 d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'3000) {
-                trampoline_safe = true;
+                trampoline_memory_is_free = true;
             }
         } else if (d->Type == EfiMemoryMappedIO) {
             // generic hardware mmio regions
@@ -385,7 +385,7 @@ auto init_paging() -> void {
         }
     }
 
-    if (!trampoline_safe) {
+    if (!trampoline_memory_is_free) {
         serial_print("abort: memory used by trampoline not free\n");
         panic(0x00'00'ff'ff);
     }
