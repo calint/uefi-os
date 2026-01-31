@@ -2,9 +2,9 @@
 
 #include "kernel.hpp"
 
-// note: stack must be 16 byte aligned and top of stack sets RSP
-//       make sure top of stack is 16 bytes aligned
-alignas(16) static u8 stack[16384 * 16];
+// critical addresses:
+// 0x0'8000 - ?       : start core trampoline code
+// 0x1'0000 - 0x1'2fff: pml4 for protected mode when in trampoline code
 
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
@@ -19,6 +19,10 @@ extern "C" i32 _fltused;
 extern "C" i32 _fltused = 0;
 
 namespace {
+
+// note: stack must be 16 byte aligned and top of stack sets RSP
+//       make sure top of stack is 16 bytes aligned
+alignas(16) static u8 kernel_stack[16384 * 16];
 
 [[noreturn]] auto panic(u32 color) -> void {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
@@ -232,7 +236,7 @@ auto get_next_table(u64* table, u64 index) -> u64* {
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) u64 boot_pml4[512];
+alignas(4096) u64 long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
@@ -283,7 +287,7 @@ auto map_range(u64 phys, u64 size, u64 flags) -> void {
         auto pt_idx = (addr >> 12) & 0x1ff;
 
         // traverse hierarchy: allocate lower tables as needed
-        auto pdp = get_next_table(boot_pml4, pml4_idx);
+        auto pdp = get_next_table(long_mode_pml4, pml4_idx);
         auto pd = get_next_table(pdp, pdp_idx);
 
         // check if 2mb mapping is possible: aligned start and sufficient size
@@ -406,7 +410,7 @@ auto init_paging() -> void {
     asm volatile("wbinvd" ::: "memory");
 
     // activate the new tables
-    asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
+    asm volatile("mov %0, %%cr3" : : "r"(long_mode_pml4) : "memory");
 }
 
 // apic timer calibration
@@ -623,7 +627,8 @@ extern "C" auto kernel_on_timer() -> void {
                  "mov %0, %%rbp\n\t"
                  "jmp *%1"
                  :
-                 : "r"(&stack[sizeof(stack)] - 8), "r"(osca::start)
+                 : "r"(&kernel_stack[sizeof(kernel_stack)] - 8),
+                   "r"(osca::start)
                  : "memory");
     // note: why -8?
     // the x86-64 system v abi requires the stack to be 16-byte aligned at the
@@ -684,25 +689,23 @@ extern "C" volatile u8 ap_boot_flag = 0;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
-[[noreturn]] auto ap_main() -> void {
+[[noreturn]] auto run_core() -> void {
+    // flag bsp that core is running
     ap_boot_flag = 1;
-
-    serial_print("core online\n");
 
     init_gdt();
     init_idt();
 
-    // identify this core index to determine screen position
-    auto my_apic_id = (apic.local[0x20 / 4] >> 24) & 0xFF;
-    auto core_index = 0u;
+    // find this core index
+    auto apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
     for (auto i = 0u; i < core_count; ++i) {
-        if (cores[i].apic_id == my_apic_id) {
-            core_index = i;
-            break;
+        if (cores[i].apic_id == apic_id) {
+            osca::run_core(i);
         }
     }
 
-    osca::run_core(core_index);
+    // core not found
+    panic(0xffffff00);
 }
 
 auto delay_cycles(u64 cycles) -> void {
@@ -712,33 +715,44 @@ auto delay_cycles(u64 cycles) -> void {
 }
 
 auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
-    // send init ipi
+    // select target core via high dword of icr
     apic.local[0x310 / 4] = u32(apic_id) << 24;
+
+    // send init ipi to reset the ap (application processor)
     apic.local[0x300 / 4] = 0x00004500;
 
+    // wait until the delivery status bit clears
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
 
-    // 10ms delay after init (intel requirement)
+    // wait 10ms for ap to settle after reset (intel requirement)
     delay_cycles(10'000'000);
 
-    // send first sipi
+    // convert address to 4kb page vector; 0x8000 -> 0x08
     auto vector = (trampoline_address >> 12) & 0xFF;
+
+    // re-select target apic id
     apic.local[0x310 / 4] = u32(apic_id) << 24;
+
+    // send first sipi to wake ap at vector address
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
+    // send first sipi
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
 
-    // 200us delay between sipis (intel requirement)
+    // short 200us delay before retry (intel requirement)
     delay_cycles(200'000);
 
-    // send second sipi (critical - intel requires two)
+    // re-select target apic id (intel requirement)
     apic.local[0x310 / 4] = u32(apic_id) << 24;
+
+    // send second sipi; required by intel for reliability
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
+    // final delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
@@ -749,59 +763,58 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto run_core(uptr trampoline_dest, uptr bridge_pml4, uptr stack,
+auto run_core(uptr trampoline_dest, uptr protected_mode_pml4, uptr stack,
               auto (*task)()->void) -> void {
 
     // calculate size using the addresses of the labels
     auto start_addr = uptr(kernel_asm_run_core_start);
-    auto end_addr = uptr(kernel_asm_run_core_end);
-    auto code_size = end_addr - start_addr;
+    auto code_size = uptr(kernel_asm_run_core_end) - start_addr;
 
     // copy the code.
     memcpy(reinterpret_cast<void*>(trampoline_dest), kernel_asm_run_core_start,
            code_size);
 
     // calculate the offset of the config data relative to the start
-    auto config_label_addr = uptr(kernel_asm_run_core_config);
-    auto config_offset = config_label_addr - start_addr;
+    auto config_offset = uptr(kernel_asm_run_core_config) - start_addr;
 
+    // define struct
     struct [[gnu::packed]] TrampolineConfig {
-        u64 bridge_pml4;
-        u64 stack_addr;
-        u64 entry_point;
-        u64 final_pml4;
+        uptr protected_mode_pml4;
+        uptr stack;
+        uptr task;
+        uptr long_mode_pml4;
     };
     auto config =
         reinterpret_cast<TrampolineConfig*>(trampoline_dest + config_offset);
 
     // fill the values
-    config->bridge_pml4 = bridge_pml4;
-    config->stack_addr = stack;
-    config->entry_point = u64(task);
-    config->final_pml4 = u64(boot_pml4);
+    config->protected_mode_pml4 = protected_mode_pml4;
+    config->stack = stack;
+    config->task = uptr(task);
+    config->long_mode_pml4 = uptr(long_mode_pml4);
 
     // ensure the data is actually in ram before we kick the ap
     asm volatile("mfence" ::: "memory");
     asm volatile("wbinvd" ::: "memory");
 }
 
-auto constexpr TRAMPOLINE_DEST_ADDR = 0x8000;
+auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
-    auto bridge_pml4 = reinterpret_cast<u64*>(0x10000);
-    auto bridge_pdpt = reinterpret_cast<u64*>(0x11000);
-    auto bridge_pd = reinterpret_cast<u64*>(0x12000);
+    auto protected_mode_pml4 = reinterpret_cast<u64*>(0x10000);
+    auto protected_mode_pdpt = reinterpret_cast<u64*>(0x11000);
+    auto protected_mode_pd = reinterpret_cast<u64*>(0x12000);
 
-    memset(bridge_pml4, 0, 4096);
-    memset(bridge_pdpt, 0, 4096);
-    memset(bridge_pd, 0, 4096);
+    memset(protected_mode_pml4, 0, 4096);
+    memset(protected_mode_pdpt, 0, 4096);
+    memset(protected_mode_pd, 0, 4096);
 
     // identity map the first 1GB (for code/stack)
-    bridge_pml4[0] = 0x11000 | 0x3;
-    bridge_pdpt[0] = 0x12000 | 0x3;
+    protected_mode_pml4[0] = 0x11000 | 0x3;
+    protected_mode_pdpt[0] = 0x12000 | 0x3;
     for (auto i = 0u; i < 32; ++i) {
-        bridge_pd[i] = (i * 0x200000) | 0x83;
+        protected_mode_pd[i] = (i * 0x200000) | 0x83;
     }
 
     asm volatile("wbinvd" ::: "memory");
@@ -824,13 +837,14 @@ auto init_cores() {
         auto stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
 
         // prepare the trampoline with the target function
-        run_core(0x8000, u64(bridge_pml4), stack_top, ap_main);
+        run_core(TRAMPOLINE_DEST, uptr(protected_mode_pml4), stack_top,
+                 run_core);
 
         // visual: sipi sent (orange)
         fill_rect(10, i * 15, 10, 10, 0xffffa500);
 
         // send the init-sipi-sipi sequence via the apic
-        send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST_ADDR);
+        send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // visual: bsp entered wait loop (blue)
         fill_rect(20, i * 15, 10, 10, 0x0000ffff);
