@@ -84,8 +84,8 @@ auto test_simd_support() -> void {
 }
 
 auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
-    for (u32 i = y; i < y + height; ++i) {
-        for (u32 j = x; j < x + width; ++j) {
+    for (auto i = y; i < y + height; ++i) {
+        for (auto j = x; j < x + width; ++j) {
             frame_buffer.pixels[i * frame_buffer.stride + j] = color;
         }
     }
