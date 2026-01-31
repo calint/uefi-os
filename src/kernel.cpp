@@ -841,7 +841,7 @@ auto init_cores() {
         // visual: bsp entered wait loop (blue)
         fill_rect(20, i * 15, 10, 10, 0x0000ffff);
 
-        serial_print("kicked core id: ");
+        serial_print("* core id: ");
         serial_print_hex_byte(cores[i].apic_id);
         serial_print("\n");
 
@@ -851,7 +851,7 @@ auto init_cores() {
         }
     }
 
-    serial_print("all cores initialized\n");
+    serial_print("all cores running\n");
 }
 
 } // namespace
@@ -861,9 +861,9 @@ auto init_cores() {
     serial_print("serial initiated\n");
 
     if (!verify_low_memory()) {
-        panic(0xffff0000);
+        panic(0xff'ff'00'00);
     }
-    screen_fill(0x00000000);
+    screen_fill(0x0000'0000);
 
     heap = make_heap();
 
