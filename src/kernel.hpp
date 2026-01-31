@@ -43,13 +43,6 @@ struct Core {
     u8 apic_id;
 };
 
-struct [[gnu::packed]] TrampolineConfig {
-    u32 pml4_address;  // physical address of the page table
-    u32 reserved;      // padding
-    u64 stack_address; // initial rsp for the ap
-    u64 entry_point;   // address of kernel_ap_main
-};
-
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
 extern KeyboardConfig keyboard_config;

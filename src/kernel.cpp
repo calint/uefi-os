@@ -31,6 +31,31 @@ namespace {
     }
 }
 
+auto screen_fill(u32 color) -> void {
+    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+        frame_buffer.pixels[i] = color;
+    }
+}
+
+auto fill_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+    auto fb = frame_buffer.pixels;
+    auto stride = frame_buffer.stride;
+
+    // Bounds checking
+    if (x >= frame_buffer.width || y >= frame_buffer.height)
+        return;
+    if (x + width > frame_buffer.width)
+        width = frame_buffer.width - x;
+    if (y + height > frame_buffer.height)
+        height = frame_buffer.height - y;
+
+    for (u32 i = 0; i < height; ++i) {
+        for (u32 j = 0; j < width; ++j) {
+            fb[(y + i) * stride + (x + j)] = color;
+        }
+    }
+}
+
 // serial (uart) init
 auto inline init_serial() -> void {
     // ier (interrupt enable register): disable all hardware interrupts
@@ -634,14 +659,25 @@ auto kernel_start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void)
     uptr config_offset = config_label_addr - start_addr;
 
     // 4. Get the pointer to the config struct WITHIN the 0x8000 memory area
+    struct [[gnu::packed]] TrampolineConfig {
+        u64 pml4;
+        u64 stack_address; // initial rsp for the ap
+        u64 entry_point;   // address of kernel_ap_main
+        u64 final_pml4;
+        u64 fb_physical;
+    };
     auto* config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
 
     // 5. Fill the values
-    config->pml4_address = static_cast<u32>(pml4_phys);
+    config->pml4 = pml4_phys;
     config->stack_address = stack_phys;
-    config->entry_point = reinterpret_cast<u64>(target);
+    config->entry_point = u64(target);
+    config->final_pml4 = u64(boot_pml4);
+    config->fb_physical = u64(frame_buffer.pixels);
+
     // Ensure the data is actually in RAM before we kick the AP
     asm volatile("mfence" ::: "memory");
+    asm volatile("wbinvd" ::: "memory"); // Flush all caches
 }
 
 // In your global scope
@@ -660,6 +696,24 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
 // Each core lands here after the trampoline finishes
 [[noreturn]] auto ap_main() -> void {
     ap_boot_flag = 1;
+    asm volatile("mfence; wbinvd" ::: "memory");
+
+    // Don't call ANYTHING else - just spin
+    volatile auto x = 1;
+    while (x == 1) {
+        asm volatile("pause");
+    }
+
+    // 1. Swap from the 0x10000 table to the 0x1'4000'0000 table
+    // pml4_phys is your 64-bit global address
+    // asm volatile("mov %0, %%cr3" : : "r"(boot_pml4) : "memory");
+
+    ap_boot_flag = 1;
+    asm volatile("mfence" ::: "memory"); // Ensure write is visible to BSP
+    asm volatile("wbinvd" ::: "memory"); // Extra aggressive flush
+
+    serial_print("AP\n");
+
     init_gdt(); // Each core needs its own GDT state
     init_idt(); // Each core needs its own IDTR loaded
 
@@ -695,32 +749,41 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
     }
 }
 
+auto delay_cycles(u64 cycles) -> void {
+    for (u64 i = 0; i < cycles; i++) {
+        asm volatile("pause" ::: "memory");
+    }
+}
+
+// FIX 1: Send TWO SIPIs (Intel requirement)
 auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // 1. Send INIT IPI
-    // Select destination in High ICR (bits 24-31)
     apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
-    // Send INIT command in Low ICR: Level Assert (bit 14), Delivery Mode 101
-    // (INIT)
     apic.local[0x300 / 4] = 0x00004500;
 
-    // 3. Wait for delivery to complete (Bit 12 == 0)
-    // Instead of a time delay, we wait for hardware acknowledgement
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
-    // // 3. BABY STEP: Small delay (approx 10ms-ish)
-    // for (int i = 0; i < 10'000'000; i++) {
-    //     asm volatile("pause");
-    // }
 
-    // 3. Send Startup IPI (SIPI)
-    // Vector is the page number (0x8000 -> 0x08)
+    // 10ms delay after INIT (Intel requirement)
+    delay_cycles(10'000'000);
+
+    // 2. Send FIRST SIPI
     u32 vector = (trampoline_address >> 12) & 0xFF;
     apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
-    // Send SIPI command: Delivery Mode 110 (Start-up)
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
-    // 5. Wait for delivery again
+    while (apic.local[0x300 / 4] & (1 << 12)) {
+        asm volatile("pause");
+    }
+
+    // 200us delay between SIPIs (Intel spec)
+    delay_cycles(200'000);
+
+    // 3. Send SECOND SIPI (CRITICAL - Intel requires TWO)
+    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    apic.local[0x300 / 4] = 0x00004600 | vector;
+
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
@@ -728,18 +791,41 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
 auto kernel_start_cores() {
     serial_print("start cores\n");
+    u64* bridge_pml4 = reinterpret_cast<u64*>(0x10000);
+    u64* bridge_pdpt = reinterpret_cast<u64*>(0x11000);
+    u64* bridge_pd = reinterpret_cast<u64*>(0x12000);
+    // Let's use 0x13000 for a second Page Directory to map the FB
+    u64* bridge_fb_pd = reinterpret_cast<u64*>(0x13000);
 
-    // Get the physical address of the page tables we built
-    u64 pml4_phys = reinterpret_cast<uptr>(boot_pml4);
-    if (pml4_phys > 0xFFFFFFFF) {
-        serial_print("ERROR: boot_pml4 is at ");
-        serial_print_hex(pml4_phys);
-        serial_print(". This is above 4GB and will crash APs!\n");
-        asm volatile("cli");
-        while (true) {
-            asm volatile("hlt");
-        }
+    memset(bridge_pml4, 0, 4096);
+    memset(bridge_pdpt, 0, 4096);
+    memset(bridge_pd, 0, 4096);
+    memset(bridge_fb_pd, 0, 4096);
+
+    // 1. Identity map the first 1GB (for code/stack)
+    bridge_pml4[0] = 0x11000 | 0x3;
+    bridge_pdpt[0] = 0x12000 | 0x3;
+    for (u64 i = 0; i < 32; ++i) {
+        bridge_pd[i] = (i * 0x200000) | 0x83;
     }
+
+    // 2. Identity map the Framebuffer in the Bridge tables
+    u64 fb_phys = reinterpret_cast<uptr>(frame_buffer.pixels);
+    u64 fb_size = frame_buffer.stride * frame_buffer.height * sizeof(u32);
+
+    // Find which 1GB slot the FB belongs to
+    u64 fb_pdpt_idx = (fb_phys >> 30) & 0x1FF;
+    bridge_pdpt[fb_pdpt_idx] = reinterpret_cast<uptr>(bridge_fb_pd) | 0x3;
+
+    // Map the FB range using 2MB pages
+    u64 fb_start_2mb = fb_phys >> 21;
+    u64 fb_pages = (fb_size + 0x1FFFFF) >> 21;
+    for (u64 i = 0; i < fb_pages; ++i) {
+        u64 current_phys = (fb_start_2mb + i) << 21;
+        bridge_fb_pd[(current_phys >> 21) & 0x1FF] = current_phys | 0x83;
+    }
+
+    asm volatile("wbinvd" ::: "memory");
 
     for (u8 i = 0; i < core_count; ++i) {
         // Skip the BSP (the core currently running this code)
@@ -749,7 +835,10 @@ auto kernel_start_cores() {
             continue;
         }
 
+        // Visual: BSP is starting to process Core i (Yellow)
+        fill_rect(0, i * 15, 10, 10, 0xFFFFFF00);
         ap_boot_flag = 0;
+        asm volatile("mfence" ::: "memory");
 
         // 1. Allocate a unique stack for this specific core
         // Each core gets its own 4KB page
@@ -757,28 +846,114 @@ auto kernel_start_cores() {
         u64 stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
 
         // 2. Prepare the trampoline with the target function
-        kernel_start_task(pml4_phys, stack_top, ap_main);
+        kernel_start_task(u64(bridge_pml4), stack_top, ap_main);
+
+        // Visual: SIPI Sent (Orange)
+        fill_rect(10, i * 15, 10, 10, 0xFFFFa500);
 
         // 3. Send the INIT-SIPI-SIPI sequence via the APIC
         // We use the APIC ID found in the MADT
         send_init_sipi(cores[i].apic_id, 0x8000);
 
+        // Visual: BSP entered wait loop (Blue)
+        fill_rect(20, i * 15, 10, 10, 0x0000ffff);
+
         serial_print("Kicked core ID: ");
         serial_print_hex_byte(cores[i].apic_id);
         serial_print("\n");
 
-        // Brief delay to allow the AP to clear the trampoline
-        // before we overwrite the config for the next core
-        while (ap_boot_flag == 0) {
-            asm volatile(
-                "pause"); // Tell CPU we are in a spin-loop to save power
+        // mfence BEFORE reading flag
+        u64 timeout = 0;
+        while (true) {
+            // Ensure we see the latest value
+            asm volatile("mfence" ::: "memory");
+
+            volatile u8 flag = ap_boot_flag;
+            if (flag != 0) {
+                break;
+            }
+
+            asm volatile("pause");
+
+            if (++timeout > 0x10000000) {
+                // Visual: Red (timeout)
+                fill_rect(30, i * 15, 10, 10, 0xffff0000);
+                serial_print("TIMEOUT\n");
+                break;
+            }
+
+            // Heartbeat every 16M iterations
+            if ((timeout & 0xFFFFFF) == 0) {
+                fill_rect(30, i * 15, 10, 10, 0xff444444);
+            }
+        }
+
+        if (ap_boot_flag == 1) {
+            // Visual: AP SUCCESS (Green)
+            fill_rect(40, i * 15, 10, 10, 0xff00ff00);
         }
     }
 
     serial_print("All cores initialized.\n");
+
+    // screen_fill(0xFF00FF00);
+    if (ap_boot_flag != 0) {
+        asm volatile("cli");
+        asm volatile("hlt");
+    }
+}
+
+// FIX 4: Verify low memory is actually usable
+// Add this check in kernel_start() before kernel_start_cores():
+auto verify_low_memory() -> bool {
+    // Test critical addresses
+    u64 test_addrs[] = {0x8000, 0x10000, 0x11000, 0x12000, 0x14000};
+
+    for (auto addr : test_addrs) {
+        volatile u32* ptr = reinterpret_cast<volatile u32*>(addr);
+        u32 original = *ptr;
+
+        *ptr = 0xDEADBEEF;
+        asm volatile("mfence" ::: "memory");
+
+        if (*ptr != 0xDEADBEEF) {
+            serial_print("Memory test failed at: ");
+            serial_print_hex(addr);
+            serial_print("\n");
+            return false;
+        }
+
+        *ptr = 0x12345678;
+        asm volatile("mfence" ::: "memory");
+
+        if (*ptr != 0x12345678) {
+            serial_print("Memory test failed at: ");
+            serial_print_hex(addr);
+            serial_print("\n");
+            return false;
+        }
+
+        *ptr = original; // Restore
+    }
+
+    serial_print("Low memory verified\n");
+    return true;
 }
 
 [[noreturn]] auto kernel_start() -> void {
+    if (!verify_low_memory()) {
+        panic(0xffff0000);
+    }
+    screen_fill(0x00000000);
+
+    // TEST: Can we actually use 0x8000?
+    volatile u32* test_ptr = reinterpret_cast<volatile u32*>(0x8000);
+    *test_ptr = 0xDEADBEEF;
+    if (*test_ptr != 0xDEADBEEF) {
+        panic(0xFFFF0000);
+    }
+    // If we get here, 0x8000 is likely safe for now.
+
     init_serial();
     serial_print("serial initiated\n");
 
@@ -806,8 +981,8 @@ auto kernel_start_cores() {
     kernel_start_cores();
 
     serial_print("osca_start\n");
-    osca_start();
-    // while (true) {
-    //     asm volatile("hlt");
-    // }
+    //    osca_start();
+    while (true) {
+        asm volatile("hlt");
+    }
 }

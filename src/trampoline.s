@@ -69,22 +69,37 @@ protected_mode:
 
 .code64
 long_mode_entry:
-    # Set up data segments for 64-bit
+    # 1. Point to the config struct
+    movq $(TRAMPOLINE_BASE + (trampoline_config_data - trampoline_start)), %rsi
+    
+    # --- DEBUG MILESTONE: DRAW WHITE LINE ---
+    # Offset 32 in TrampolineConfig is fb_physical
+    movq 32(%rsi), %rdi   
+    movl $0xFFFFFFFF, %eax # White pixel color
+    movq $100, %rcx        # Draw 500 pixels
+    
+.debug_line_loop:
+    movl %eax, (%rdi)      # Write pixel
+    addq $4, %rdi          # Move to next pixel (4 bytes per pixel)
+    loop .debug_line_loop
+
+    # ----------------------------------------
+    # --- THE HANDOVER ---
+    # We are currently on the Bridge (0x10000). 
+    # Now we switch to the REAL kernel tables that map > 4GB.
+    movq 24(%rsi), %rax   # 24 = offset of final_pml4
+    movq %rax, %cr3       # CPU can now see the high-memory kernel!
+    # --------------------
+
+    # 2. Setup segments and stack
     xorl %eax, %eax
     movw %ax, %ds
     movw %ax, %es
-
-    # Point to the config struct for stack and entry point
-    movq $(TRAMPOLINE_BASE + (trampoline_config_data - trampoline_start)), %rsi
-
-    # Load stack from struct (offset 8)
     movq 8(%rsi), %rsp
     movq %rsp, %rbp
     
-    # Load C++ entry point from struct (offset 16)
+    # 3. Now the call to ap_main (e.g., 0x14000xxxx) will succeed!
     movq 16(%rsi), %rax
-
-    # Call the C++ function
     call *%rax
 
 .halt:
@@ -104,7 +119,7 @@ early_gdt_ptr:
 
 .align 16
 trampoline_config_data:
-    .fill 32, 1, 0
+    .fill 64, 1, 0
 
 .global trampoline_end
 trampoline_end:
