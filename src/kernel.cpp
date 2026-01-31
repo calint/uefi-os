@@ -649,7 +649,6 @@ auto verify_low_memory() -> bool {
         auto original = *ptr;
 
         *ptr = 0xDEADBEEF;
-        sfence();
 
         if (*ptr != 0xDEADBEEF) {
             serial_print("memory test failed at: ");
@@ -659,7 +658,6 @@ auto verify_low_memory() -> bool {
         }
 
         *ptr = 0x12345678;
-        mfence();
 
         if (*ptr != 0x12345678) {
             serial_print("memory test failed at: ");
@@ -684,18 +682,14 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
 }
 
 // In your global scope
-extern "C" volatile u8 ap_boot_flag;
-extern "C" volatile u8 ap_boot_flag = 0;
+extern "C" volatile u8 run_core_started_flag;
+extern "C" volatile u8 run_core_started_flag = 0;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
-    ap_boot_flag = 1;
-    mfence();
-    clflush(&ap_boot_flag);
-    mfence();
-    //--
+    run_core_started_flag = 1;
 
     init_gdt();
     init_idt();
@@ -734,7 +728,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     delay_cycles(10'000'000);
 
     // convert address to 4kb page vector; 0x8000 -> 0x08
-    auto vector = (trampoline_address >> 12) & 0xFF;
+    auto vector = (trampoline_address >> 12) & 0xff;
 
     // re-select target apic id
     apic.local[0x310 / 4] = u32(apic_id) << 24;
@@ -742,7 +736,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // send first sipi to wake ap at vector address
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
-    // send first sipi
+    // wait for delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
@@ -762,7 +756,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     }
 }
 
-// addressed in the assembler code
+// addresses in the assembler code
 extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
@@ -779,15 +773,12 @@ auto init_cores() {
     memset(protected_mode_pdpt, 0, 4096);
     memset(protected_mode_pd, 0, 4096);
 
-    // identity map the first 1GB (for code/stack)
+    // identity map the first 1GB covering 0x8000, 0x1'0000 -> 0x1'3000
     protected_mode_pml4[0] = 0x1'1000 | PAGE_P | PAGE_RW;
     protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
     for (auto i = 0u; i < 32; ++i) {
         protected_mode_pd[i] = (i * 0x20'0000) | PAGE_P | PAGE_RW | PAGE_PS;
     }
-
-    // flush caches so cores can see the pages
-    wbinvd();
 
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
@@ -832,15 +823,11 @@ auto init_cores() {
         config->task = uptr(run_core);
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
+        // the core sets flag to 1 once it has started
+        run_core_started_flag = 0;
+
         // visual: sipi sent (orange)
         fill_rect(10, i * 15, 10, 10, 0xffffa500);
-
-        // the core sets flag to 1 once it has started
-        ap_boot_flag = 0;
-        mfence();
-        clflush(&ap_boot_flag);
-        mfence();
-        //--
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
@@ -853,7 +840,7 @@ auto init_cores() {
         serial_print("\n");
 
         // wait for core to start
-        while (ap_boot_flag == 0) {
+        while (run_core_started_flag == 0) {
             asm volatile("pause");
         }
     }
