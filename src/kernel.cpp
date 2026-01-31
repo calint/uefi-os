@@ -780,20 +780,18 @@ auto start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void) -> void {
 
     // get the pointer to the config struct within the 0x8000 memory area
     struct [[gnu::packed]] TrampolineConfig {
-        u64 pml4;
+        u64 bridge_pml4;
         u64 stack_address;
         u64 entry_point;
         u64 final_pml4;
-        u64 fb_physical;
     };
     auto config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
 
     // fill the values
-    config->pml4 = pml4_phys;
+    config->bridge_pml4 = pml4_phys;
     config->stack_address = stack_phys;
     config->entry_point = u64(target);
     config->final_pml4 = u64(boot_pml4);
-    config->fb_physical = u64(frame_buffer.pixels);
 
     // ensure the data is actually in ram before we kick the ap
     asm volatile("mfence" ::: "memory");
@@ -858,7 +856,7 @@ auto init_cores() {
         }
     }
 
-    serial_print("all cores initialized.\n");
+    serial_print("all cores initialized\n");
 }
 
 } // namespace

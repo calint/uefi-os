@@ -99,7 +99,7 @@ early_gdt_ptr:
 
 .align 16
 trampoline_config_data:
-    .fill 64, 1, 0
+    .fill 32, 1, 0
 
 .global trampoline_end
 trampoline_end:
