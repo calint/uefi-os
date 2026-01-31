@@ -649,20 +649,20 @@ auto verify_low_memory() -> bool {
         auto original = *ptr;
 
         *ptr = 0xDEADBEEF;
-        asm volatile("mfence" ::: "memory");
+        sfence();
 
         if (*ptr != 0xDEADBEEF) {
-            serial_print("Memory test failed at: ");
+            serial_print("memory test failed at: ");
             serial_print_hex(addr);
             serial_print("\n");
             return false;
         }
 
         *ptr = 0x12345678;
-        asm volatile("mfence" ::: "memory");
+        mfence();
 
         if (*ptr != 0x12345678) {
-            serial_print("Memory test failed at: ");
+            serial_print("memory test failed at: ");
             serial_print_hex(addr);
             serial_print("\n");
             return false;
@@ -671,7 +671,7 @@ auto verify_low_memory() -> bool {
         *ptr = original; // Restore
     }
 
-    serial_print("Low memory verified\n");
+    serial_print("low memory verified\n");
     return true;
 }
 
@@ -692,6 +692,9 @@ extern "C" volatile u8 ap_boot_flag = 0;
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
     ap_boot_flag = 1;
+
+    // ensure all stores are globally visible
+    sfence();
 
     init_gdt();
     init_idt();
@@ -763,41 +766,6 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto run_core(uptr trampoline_dest, uptr protected_mode_pml4, uptr stack,
-              auto (*task)()->void) -> void {
-
-    // calculate size using the addresses of the labels
-    auto start_addr = uptr(kernel_asm_run_core_start);
-    auto code_size = uptr(kernel_asm_run_core_end) - start_addr;
-
-    // copy the code.
-    memcpy(reinterpret_cast<void*>(trampoline_dest), kernel_asm_run_core_start,
-           code_size);
-
-    // calculate the offset of the config data relative to the start
-    auto config_offset = uptr(kernel_asm_run_core_config) - start_addr;
-
-    // define struct
-    struct [[gnu::packed]] TrampolineConfig {
-        uptr protected_mode_pml4;
-        uptr stack;
-        uptr task;
-        uptr long_mode_pml4;
-    };
-    auto config =
-        reinterpret_cast<TrampolineConfig*>(trampoline_dest + config_offset);
-
-    // fill the values
-    config->protected_mode_pml4 = protected_mode_pml4;
-    config->stack = stack;
-    config->task = uptr(task);
-    config->long_mode_pml4 = uptr(long_mode_pml4);
-
-    // ensure the data is actually in ram before we kick the ap
-    asm volatile("mfence" ::: "memory");
-    asm volatile("wbinvd" ::: "memory");
-}
-
 auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto init_cores() {
@@ -817,6 +785,7 @@ auto init_cores() {
         protected_mode_pd[i] = (i * 0x200000) | PAGE_P | PAGE_RW | PAGE_PS;
     }
 
+    // flush caches
     asm volatile("wbinvd" ::: "memory");
 
     for (auto i = 0u; i < core_count; ++i) {
@@ -830,20 +799,49 @@ auto init_cores() {
         // visual: bsp is starting to process core i (yellow)
         fill_rect(0, i * 15, 10, 10, 0xffffff00);
         ap_boot_flag = 0;
-        asm volatile("mfence" ::: "memory");
+
+        // ensure all stores are globally visible
+        sfence();
 
         // allocate a unique stack for this specific core
-        auto ap_stack = allocate_page();
-        auto stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
+        auto stack = allocate_page();
+        auto stack_top = reinterpret_cast<uptr>(stack) + 4096;
 
         // prepare the trampoline with the target function
-        run_core(TRAMPOLINE_DEST, uptr(protected_mode_pml4), stack_top,
-                 run_core);
+        // calculate size using the addresses of the labels
+        auto start_addr = uptr(kernel_asm_run_core_start);
+        auto code_size = uptr(kernel_asm_run_core_end) - start_addr;
+
+        // copy the trampoline code to lower 1MB so real mode can run it
+        memcpy(reinterpret_cast<void*>(TRAMPOLINE_DEST),
+               kernel_asm_run_core_start, code_size);
+
+        // calculate the offset of the config data relative to the start
+        auto config_offset = uptr(kernel_asm_run_core_config) - start_addr;
+
+        // define struct
+        struct [[gnu::packed]] TrampolineConfig {
+            uptr protected_mode_pml4;
+            uptr stack;
+            uptr task;
+            uptr long_mode_pml4;
+        };
+        auto config = reinterpret_cast<TrampolineConfig*>(TRAMPOLINE_DEST +
+                                                          config_offset);
+
+        // fill the values
+        config->protected_mode_pml4 = uptr(protected_mode_pml4);
+        config->stack = uptr(stack_top);
+        config->task = uptr(run_core);
+        config->long_mode_pml4 = uptr(long_mode_pml4);
+
+        // ensure the data is written is globally visible
+        sfence();
 
         // visual: sipi sent (orange)
         fill_rect(10, i * 15, 10, 10, 0xffffa500);
 
-        // send the init-sipi-sipi sequence via the apic
+        // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // visual: bsp entered wait loop (blue)
@@ -853,6 +851,7 @@ auto init_cores() {
         serial_print_hex_byte(cores[i].apic_id);
         serial_print("\n");
 
+        // wait for core to start
         while (ap_boot_flag == 0) {
             asm volatile("pause");
         }
@@ -864,13 +863,13 @@ auto init_cores() {
 } // namespace
 
 [[noreturn]] auto kernel_start() -> void {
+    init_serial();
+    serial_print("serial initiated\n");
+
     if (!verify_low_memory()) {
         panic(0xffff0000);
     }
     screen_fill(0x00000000);
-
-    init_serial();
-    serial_print("serial initiated\n");
 
     heap = make_heap();
 

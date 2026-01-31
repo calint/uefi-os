@@ -97,6 +97,10 @@ auto inline serial_print_hex_byte(u8 val) -> void {
 
 auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
+auto inline sfence() -> void { asm volatile("sfence" ::: "memory"); }
+
+auto inline mfence() -> void { asm volatile("mfence" ::: "memory"); }
+
 [[noreturn]] auto kernel_start() -> void;
 
 namespace osca {
