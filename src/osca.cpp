@@ -199,10 +199,6 @@ auto on_keyboard(u8 scancode) -> void {
     while (true) {
         draw_rect(x_pos, y_pos, 50, 50, color);
         ++color;
-        // ensure the writes are visible to the gpu
-        // mfence forces memory ordering, and wbinvd flushes all caches
-        asm volatile("mfence" ::: "memory");
-        asm volatile("wbinvd" ::: "memory");
     }
 }
 } // namespace osca
