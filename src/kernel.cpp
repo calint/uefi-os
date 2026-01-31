@@ -634,55 +634,41 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-} // namespace
+// verify low memory is actually usable
+auto verify_low_memory() -> bool {
+    // test critical addresses
+    u64 test_addrs[] = {0x8000, 0x10000, 0x11000, 0x12000, 0x14000};
 
-// addressed in the assembler code
-extern "C" u8 trampoline_start[];
-extern "C" u8 trampoline_end[];
-extern "C" u8 trampoline_config_data[];
+    for (auto addr : test_addrs) {
+        volatile auto ptr = reinterpret_cast<volatile u32*>(addr);
+        auto original = *ptr;
 
-auto kernel_start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void)
-    -> void {
-    const uptr base = 0x8000;
+        *ptr = 0xDEADBEEF;
+        asm volatile("mfence" ::: "memory");
 
-    // 1. Calculate size using the addresses of the labels
-    uptr start_addr = reinterpret_cast<uptr>(trampoline_start);
-    uptr end_addr = reinterpret_cast<uptr>(trampoline_end);
-    uptr code_size = end_addr - start_addr;
+        if (*ptr != 0xDEADBEEF) {
+            serial_print("Memory test failed at: ");
+            serial_print_hex(addr);
+            serial_print("\n");
+            return false;
+        }
 
-    // 2. Copy the code.
-    // Since trampoline_start is an array, it is already the source address.
-    memcpy(reinterpret_cast<void*>(base), trampoline_start, code_size);
+        *ptr = 0x12345678;
+        asm volatile("mfence" ::: "memory");
 
-    // 3. Calculate the offset of the config data relative to the start
-    uptr config_label_addr = reinterpret_cast<uptr>(trampoline_config_data);
-    uptr config_offset = config_label_addr - start_addr;
+        if (*ptr != 0x12345678) {
+            serial_print("Memory test failed at: ");
+            serial_print_hex(addr);
+            serial_print("\n");
+            return false;
+        }
 
-    // 4. Get the pointer to the config struct WITHIN the 0x8000 memory area
-    struct [[gnu::packed]] TrampolineConfig {
-        u64 pml4;
-        u64 stack_address; // initial rsp for the ap
-        u64 entry_point;   // address of kernel_ap_main
-        u64 final_pml4;
-        u64 fb_physical;
-    };
-    auto* config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
+        *ptr = original; // Restore
+    }
 
-    // 5. Fill the values
-    config->pml4 = pml4_phys;
-    config->stack_address = stack_phys;
-    config->entry_point = u64(target);
-    config->final_pml4 = u64(boot_pml4);
-    config->fb_physical = u64(frame_buffer.pixels);
-
-    // Ensure the data is actually in RAM before we kick the AP
-    asm volatile("mfence" ::: "memory");
-    asm volatile("wbinvd" ::: "memory"); // Flush all caches
+    serial_print("Low memory verified\n");
+    return true;
 }
-
-// In your global scope
-extern "C" volatile u8 ap_boot_flag;
-extern "C" volatile u8 ap_boot_flag = 0;
 
 auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
     for (u32 i = y; i < y + height; ++i) {
@@ -691,6 +677,10 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
         }
     }
 }
+
+// In your global scope
+extern "C" volatile u8 ap_boot_flag;
+extern "C" volatile u8 ap_boot_flag = 0;
 
 // This is the entry point for Application Processors
 // Each core lands here after the trampoline finishes
@@ -776,7 +766,50 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     }
 }
 
-auto kernel_start_cores() {
+// addressed in the assembler code
+extern "C" u8 trampoline_start[];
+extern "C" u8 trampoline_end[];
+extern "C" u8 trampoline_config_data[];
+
+auto start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void) -> void {
+    const uptr base = 0x8000;
+
+    // 1. Calculate size using the addresses of the labels
+    uptr start_addr = reinterpret_cast<uptr>(trampoline_start);
+    uptr end_addr = reinterpret_cast<uptr>(trampoline_end);
+    uptr code_size = end_addr - start_addr;
+
+    // 2. Copy the code.
+    // Since trampoline_start is an array, it is already the source address.
+    memcpy(reinterpret_cast<void*>(base), trampoline_start, code_size);
+
+    // 3. Calculate the offset of the config data relative to the start
+    uptr config_label_addr = reinterpret_cast<uptr>(trampoline_config_data);
+    uptr config_offset = config_label_addr - start_addr;
+
+    // 4. Get the pointer to the config struct WITHIN the 0x8000 memory area
+    struct [[gnu::packed]] TrampolineConfig {
+        u64 pml4;
+        u64 stack_address; // initial rsp for the ap
+        u64 entry_point;   // address of kernel_ap_main
+        u64 final_pml4;
+        u64 fb_physical;
+    };
+    auto* config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
+
+    // 5. Fill the values
+    config->pml4 = pml4_phys;
+    config->stack_address = stack_phys;
+    config->entry_point = u64(target);
+    config->final_pml4 = u64(boot_pml4);
+    config->fb_physical = u64(frame_buffer.pixels);
+
+    // Ensure the data is actually in RAM before we kick the AP
+    asm volatile("mfence" ::: "memory");
+    asm volatile("wbinvd" ::: "memory"); // Flush all caches
+}
+
+auto init_cores() {
     serial_print("start cores\n");
 
     u64* bridge_pml4 = reinterpret_cast<u64*>(0x10000);
@@ -834,7 +867,7 @@ auto kernel_start_cores() {
         u64 stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
 
         // 2. Prepare the trampoline with the target function
-        kernel_start_task(u64(bridge_pml4), stack_top, ap_main);
+        start_task(u64(bridge_pml4), stack_top, ap_main);
 
         // Visual: SIPI Sent (Orange)
         fill_rect(10, i * 15, 10, 10, 0xFFFFa500);
@@ -891,56 +924,13 @@ auto kernel_start_cores() {
     }
 }
 
-// FIX 4: Verify low memory is actually usable
-// Add this check in kernel_start() before kernel_start_cores():
-auto verify_low_memory() -> bool {
-    // Test critical addresses
-    u64 test_addrs[] = {0x8000, 0x10000, 0x11000, 0x12000, 0x14000};
-
-    for (auto addr : test_addrs) {
-        volatile u32* ptr = reinterpret_cast<volatile u32*>(addr);
-        u32 original = *ptr;
-
-        *ptr = 0xDEADBEEF;
-        asm volatile("mfence" ::: "memory");
-
-        if (*ptr != 0xDEADBEEF) {
-            serial_print("Memory test failed at: ");
-            serial_print_hex(addr);
-            serial_print("\n");
-            return false;
-        }
-
-        *ptr = 0x12345678;
-        asm volatile("mfence" ::: "memory");
-
-        if (*ptr != 0x12345678) {
-            serial_print("Memory test failed at: ");
-            serial_print_hex(addr);
-            serial_print("\n");
-            return false;
-        }
-
-        *ptr = original; // Restore
-    }
-
-    serial_print("Low memory verified\n");
-    return true;
-}
+} // namespace
 
 [[noreturn]] auto kernel_start() -> void {
     if (!verify_low_memory()) {
         panic(0xffff0000);
     }
     screen_fill(0x00000000);
-
-    // TEST: Can we actually use 0x8000?
-    volatile u32* test_ptr = reinterpret_cast<volatile u32*>(0x8000);
-    *test_ptr = 0xDEADBEEF;
-    if (*test_ptr != 0xDEADBEEF) {
-        panic(0xFFFF0000);
-    }
-    // If we get here, 0x8000 is likely safe for now.
 
     init_serial();
     serial_print("serial initiated\n");
@@ -966,7 +956,7 @@ auto verify_low_memory() -> bool {
     init_keyboard();
 
     serial_print("kernel_start_cores\n");
-    kernel_start_cores();
+    init_cores();
 
     serial_print("osca_start\n");
     //    osca_start();

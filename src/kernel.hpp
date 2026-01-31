@@ -99,9 +99,6 @@ auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 [[noreturn]] auto kernel_start() -> void;
 
-auto kernel_start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void)
-    -> void;
-
 namespace osca {
 [[noreturn]] auto start() -> void;
 auto on_keyboard(u8 scancode) -> void;
