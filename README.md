@@ -28,3 +28,8 @@
 * prefix increments only used
 * although anything that can be `const` should be declared as such, it
   introduces too much noise so it is sparsely used
+
+## repository
+
+* tagged versions have been tested on asus computers with 4GB, 16GB and 32GB
+* committed code works in qemu

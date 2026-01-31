@@ -43,6 +43,13 @@ struct Core {
     u8 apic_id;
 };
 
+struct [[gnu::packed]] TrampolineConfig {
+    u32 pml4_address;  // physical address of the page table
+    u32 reserved;      // padding
+    u64 stack_address; // initial rsp for the ap
+    u64 entry_point;   // address of kernel_ap_main
+};
+
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
 extern KeyboardConfig keyboard_config;
@@ -65,6 +72,11 @@ auto inline inb(u16 port) -> u8 {
 extern "C" auto inline memset(void* s, int c, u64 n) -> void* {
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory", "cc");
     return s;
+}
+
+extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
+    asm volatile("rep movsb" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
+    return dest;
 }
 
 auto inline serial_print(char const* s) -> void {
@@ -92,7 +104,10 @@ auto inline serial_print_hex_byte(u8 val) -> void {
 
 auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
-extern "C" [[noreturn]] auto kernel_start() -> void;
+[[noreturn]] auto kernel_start() -> void;
+
+auto kernel_start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void)
+    -> void;
 
 namespace osca {
 [[noreturn]] auto start() -> void;

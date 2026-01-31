@@ -30,6 +30,9 @@ clang++ $FLAGS $CPPFLAGS $WARNINGS \
 clang++ $FLAGS $ASMFLAGS $WARNINGS \
     -c src/kernel_asm.s -o kernel_asm.o
 
+clang++ $FLAGS $ASMFLAGS $WARNINGS \
+    -c src/trampoline.s -o trampoline.o
+
 clang++ $FLAGS $CPPFLAGS $WARNINGS \
     -I /usr/include/efi/ \
     -c src/kernel.cpp -o kernel.o
@@ -44,10 +47,10 @@ clang -target x86_64-unknown-windows-msvc \
     -Wl,-entry:efi_main \
     -Wl,-subsystem:efi_application \
     -o esp/EFI/BOOT/BOOTX64.EFI \
-    uefi.o kernel_asm.o kernel.o osca.o
+    uefi.o kernel_asm.o trampoline.o kernel.o osca.o
 
-qemu-system-x86_64 -m 16G -vga std -serial stdio \
-    -smp 8,sockets=1,cores=4,threads=2 \
+qemu-system-x86_64 -m 4G -vga std -serial stdio \
+    -smp 4,sockets=1,cores=2,threads=2 \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
     -drive format=raw,file=fat:rw:esp # -full-screen
 

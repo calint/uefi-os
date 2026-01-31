@@ -357,6 +357,10 @@ auto init_paging() -> void {
     // map the dynamic memory pool
     map_range(heap_start, heap_size, RAM_FLAGS);
 
+    serial_print("* trampoline\n");
+    // Explicitly map the first 1MB as identity mapped (including 0x8000)
+    map_range(0x0, 0x100000, RAM_FLAGS);
+
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
     u32 low;
@@ -607,7 +611,174 @@ extern "C" auto kernel_on_timer() -> void {
 
 } // namespace
 
-extern "C" [[noreturn]] auto kernel_start() -> void {
+// addressed in the assembler code
+extern "C" u8 trampoline_start[];
+extern "C" u8 trampoline_end[];
+extern "C" u8 trampoline_config_data[];
+
+auto kernel_start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void)
+    -> void {
+    const uptr base = 0x8000;
+
+    // 1. Calculate size using the addresses of the labels
+    uptr start_addr = reinterpret_cast<uptr>(trampoline_start);
+    uptr end_addr = reinterpret_cast<uptr>(trampoline_end);
+    uptr code_size = end_addr - start_addr;
+
+    // 2. Copy the code.
+    // Since trampoline_start is an array, it is already the source address.
+    memcpy(reinterpret_cast<void*>(base), trampoline_start, code_size);
+
+    // 3. Calculate the offset of the config data relative to the start
+    uptr config_label_addr = reinterpret_cast<uptr>(trampoline_config_data);
+    uptr config_offset = config_label_addr - start_addr;
+
+    // 4. Get the pointer to the config struct WITHIN the 0x8000 memory area
+    auto* config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
+
+    // 5. Fill the values
+    config->pml4_address = static_cast<u32>(pml4_phys);
+    config->stack_address = stack_phys;
+    config->entry_point = reinterpret_cast<u64>(target);
+    // Ensure the data is actually in RAM before we kick the AP
+    asm volatile("mfence" ::: "memory");
+}
+
+// In your global scope
+extern "C" volatile u8 ap_boot_flag;
+extern "C" volatile u8 ap_boot_flag = 0;
+
+auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+    for (u32 i = y; i < y + height; ++i) {
+        for (u32 j = x; j < x + width; ++j) {
+            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
+        }
+    }
+}
+
+// This is the entry point for Application Processors
+// Each core lands here after the trampoline finishes
+[[noreturn]] auto ap_main() -> void {
+    ap_boot_flag = 1;
+    init_gdt(); // Each core needs its own GDT state
+    init_idt(); // Each core needs its own IDTR loaded
+
+    serial_print("AP Core Online\n");
+    // 2. Identify this core index to determine screen position
+    // We read the local APIC ID to know who we are
+    u32 my_apic_id = (apic.local[0x20 / 4] >> 24) & 0xFF;
+    u32 core_index = 0;
+    for (u32 i = 0; i < core_count; ++i) {
+        if (cores[i].apic_id == my_apic_id) {
+            core_index = i;
+            break;
+        }
+    }
+
+    // 3. Draw a unique rectangle for this core
+    // Each core gets a 50x50 block separated by 10 pixels
+    u32 x_pos = core_index * 60;
+    u32 y_pos = 300;
+
+    // Color logic: Generate a color based on ID (e.g., Greenish-Blue)
+    u32 color = 0xFF00FF00 | (my_apic_id * 0x1234);
+
+    // interrupts_enable();
+    while (true) {
+        draw_rect(x_pos, y_pos, 50, 50, color);
+        ++color;
+        // CRITICAL: Ensure the writes are visible to the GPU
+        // mfence forces memory ordering, and wbinvd flushes all caches
+        asm volatile("mfence" ::: "memory");
+        asm volatile("wbinvd" ::: "memory");
+        //        asm("hlt");
+    }
+}
+
+auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
+    // 1. Send INIT IPI
+    // Select destination in High ICR (bits 24-31)
+    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    // Send INIT command in Low ICR: Level Assert (bit 14), Delivery Mode 101
+    // (INIT)
+    apic.local[0x300 / 4] = 0x00004500;
+
+    // 3. Wait for delivery to complete (Bit 12 == 0)
+    // Instead of a time delay, we wait for hardware acknowledgement
+    while (apic.local[0x300 / 4] & (1 << 12)) {
+        asm volatile("pause");
+    }
+    // // 3. BABY STEP: Small delay (approx 10ms-ish)
+    // for (int i = 0; i < 10'000'000; i++) {
+    //     asm volatile("pause");
+    // }
+
+    // 3. Send Startup IPI (SIPI)
+    // Vector is the page number (0x8000 -> 0x08)
+    u32 vector = (trampoline_address >> 12) & 0xFF;
+    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    // Send SIPI command: Delivery Mode 110 (Start-up)
+    apic.local[0x300 / 4] = 0x00004600 | vector;
+
+    // 5. Wait for delivery again
+    while (apic.local[0x300 / 4] & (1 << 12)) {
+        asm volatile("pause");
+    }
+}
+
+auto kernel_start_cores() {
+    serial_print("start cores\n");
+
+    // Get the physical address of the page tables we built
+    u64 pml4_phys = reinterpret_cast<uptr>(boot_pml4);
+    if (pml4_phys > 0xFFFFFFFF) {
+        serial_print("ERROR: boot_pml4 is at ");
+        serial_print_hex(pml4_phys);
+        serial_print(". This is above 4GB and will crash APs!\n");
+        asm volatile("cli");
+        while (true) {
+            asm volatile("hlt");
+        }
+    }
+
+    for (u8 i = 0; i < core_count; ++i) {
+        // Skip the BSP (the core currently running this code)
+        // Usually the BSP has APIC ID 0, but we check specifically
+        auto bsp_id = (apic.local[0x020 / 4] >> 24) & 0xff;
+        if (cores[i].apic_id == bsp_id) {
+            continue;
+        }
+
+        ap_boot_flag = 0;
+
+        // 1. Allocate a unique stack for this specific core
+        // Each core gets its own 4KB page
+        void* ap_stack = allocate_page();
+        u64 stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
+
+        // 2. Prepare the trampoline with the target function
+        kernel_start_task(pml4_phys, stack_top, ap_main);
+
+        // 3. Send the INIT-SIPI-SIPI sequence via the APIC
+        // We use the APIC ID found in the MADT
+        send_init_sipi(cores[i].apic_id, 0x8000);
+
+        serial_print("Kicked core ID: ");
+        serial_print_hex_byte(cores[i].apic_id);
+        serial_print("\n");
+
+        // Brief delay to allow the AP to clear the trampoline
+        // before we overwrite the config for the next core
+        while (ap_boot_flag == 0) {
+            asm volatile(
+                "pause"); // Tell CPU we are in a spin-loop to save power
+        }
+    }
+
+    serial_print("All cores initialized.\n");
+}
+
+[[noreturn]] auto kernel_start() -> void {
     init_serial();
     serial_print("serial initiated\n");
 
@@ -631,6 +802,12 @@ extern "C" [[noreturn]] auto kernel_start() -> void {
     serial_print("init_keyboard\n");
     init_keyboard();
 
+    serial_print("kernel_start_cores\n");
+    kernel_start_cores();
+
     serial_print("osca_start\n");
     osca_start();
+    // while (true) {
+    //     asm volatile("hlt");
+    // }
 }
