@@ -682,47 +682,40 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
 extern "C" volatile u8 ap_boot_flag;
 extern "C" volatile u8 ap_boot_flag = 0;
 
-// This is the entry point for Application Processors
-// Each core lands here after the trampoline finishes
+// this is the entry point for application processors
+// each core lands here after the trampoline finishes
 [[noreturn]] auto ap_main() -> void {
     ap_boot_flag = 1;
-    // asm volatile("mfence" ::: "memory"); // Ensure write is visible to BSP
-    // asm volatile("wbinvd" ::: "memory"); // Extra aggressive flush
 
-    serial_print("AP\n");
+    serial_print("core online\n");
 
-    init_gdt(); // Each core needs its own GDT state
-    init_idt(); // Each core needs its own IDTR loaded
+    init_gdt();
+    init_idt();
 
-    serial_print("AP Core Online\n");
-    // 2. Identify this core index to determine screen position
-    // We read the local APIC ID to know who we are
-    u32 my_apic_id = (apic.local[0x20 / 4] >> 24) & 0xFF;
-    u32 core_index = 0;
-    for (u32 i = 0; i < core_count; ++i) {
+    // identify this core index to determine screen position
+    auto my_apic_id = (apic.local[0x20 / 4] >> 24) & 0xFF;
+    auto core_index = 0u;
+    for (auto i = 0u; i < core_count; ++i) {
         if (cores[i].apic_id == my_apic_id) {
             core_index = i;
             break;
         }
     }
 
-    // 3. Draw a unique rectangle for this core
-    // Each core gets a 50x50 block separated by 10 pixels
-    u32 x_pos = core_index * 60;
-    u32 y_pos = 300;
-
-    // Color logic: Generate a color based on ID (e.g., Greenish-Blue)
-    u32 color = 0xFF00FF00 | (my_apic_id * 0x1234);
+    // draw a unique rectangle for this core
+    auto x_pos = core_index * 60;
+    auto y_pos = 300u;
+    auto color = 0xff00ff00 | (my_apic_id * 0x1234);
 
     // interrupts_enable();
+
     while (true) {
         draw_rect(x_pos, y_pos, 50, 50, color);
         ++color;
-        // CRITICAL: Ensure the writes are visible to the GPU
+        // ensure the writes are visible to the gpu
         // mfence forces memory ordering, and wbinvd flushes all caches
         asm volatile("mfence" ::: "memory");
         asm volatile("wbinvd" ::: "memory");
-        //        asm("hlt");
     }
 }
 
@@ -732,33 +725,32 @@ auto delay_cycles(u64 cycles) -> void {
     }
 }
 
-// FIX 1: Send TWO SIPIs (Intel requirement)
 auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
-    // 1. Send INIT IPI
-    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    // send init ipi
+    apic.local[0x310 / 4] = u32(apic_id) << 24;
     apic.local[0x300 / 4] = 0x00004500;
 
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
 
-    // 10ms delay after INIT (Intel requirement)
+    // 10ms delay after init (intel requirement)
     delay_cycles(10'000'000);
 
-    // 2. Send FIRST SIPI
-    u32 vector = (trampoline_address >> 12) & 0xFF;
-    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    // send first sipi
+    auto vector = (trampoline_address >> 12) & 0xFF;
+    apic.local[0x310 / 4] = u32(apic_id) << 24;
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
     while (apic.local[0x300 / 4] & (1 << 12)) {
         asm volatile("pause");
     }
 
-    // 200us delay between SIPIs (Intel spec)
+    // 200us delay between sipis (intel requirement)
     delay_cycles(200'000);
 
-    // 3. Send SECOND SIPI (CRITICAL - Intel requires TWO)
-    apic.local[0x310 / 4] = (static_cast<u32>(apic_id) << 24);
+    // send second sipi (critical - intel requires two)
+    apic.local[0x310 / 4] = u32(apic_id) << 24;
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
     while (apic.local[0x300 / 4] & (1 << 12)) {
@@ -772,156 +764,101 @@ extern "C" u8 trampoline_end[];
 extern "C" u8 trampoline_config_data[];
 
 auto start_task(u64 pml4_phys, u64 stack_phys, auto (*target)()->void) -> void {
-    const uptr base = 0x8000;
+    auto constexpr base = uptr(0x8000);
 
-    // 1. Calculate size using the addresses of the labels
-    uptr start_addr = reinterpret_cast<uptr>(trampoline_start);
-    uptr end_addr = reinterpret_cast<uptr>(trampoline_end);
-    uptr code_size = end_addr - start_addr;
+    // calculate size using the addresses of the labels
+    auto start_addr = uptr(trampoline_start);
+    auto end_addr = uptr(trampoline_end);
+    auto code_size = end_addr - start_addr;
 
-    // 2. Copy the code.
-    // Since trampoline_start is an array, it is already the source address.
+    // copy the code.
     memcpy(reinterpret_cast<void*>(base), trampoline_start, code_size);
 
-    // 3. Calculate the offset of the config data relative to the start
-    uptr config_label_addr = reinterpret_cast<uptr>(trampoline_config_data);
-    uptr config_offset = config_label_addr - start_addr;
+    // calculate the offset of the config data relative to the start
+    auto config_label_addr = uptr(trampoline_config_data);
+    auto config_offset = config_label_addr - start_addr;
 
-    // 4. Get the pointer to the config struct WITHIN the 0x8000 memory area
+    // get the pointer to the config struct within the 0x8000 memory area
     struct [[gnu::packed]] TrampolineConfig {
         u64 pml4;
-        u64 stack_address; // initial rsp for the ap
-        u64 entry_point;   // address of kernel_ap_main
+        u64 stack_address;
+        u64 entry_point;
         u64 final_pml4;
         u64 fb_physical;
     };
-    auto* config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
+    auto config = reinterpret_cast<TrampolineConfig*>(base + config_offset);
 
-    // 5. Fill the values
+    // fill the values
     config->pml4 = pml4_phys;
     config->stack_address = stack_phys;
     config->entry_point = u64(target);
     config->final_pml4 = u64(boot_pml4);
     config->fb_physical = u64(frame_buffer.pixels);
 
-    // Ensure the data is actually in RAM before we kick the AP
+    // ensure the data is actually in ram before we kick the ap
     asm volatile("mfence" ::: "memory");
-    asm volatile("wbinvd" ::: "memory"); // Flush all caches
+    asm volatile("wbinvd" ::: "memory");
 }
 
 auto init_cores() {
-    serial_print("start cores\n");
-
-    u64* bridge_pml4 = reinterpret_cast<u64*>(0x10000);
-    u64* bridge_pdpt = reinterpret_cast<u64*>(0x11000);
-    u64* bridge_pd = reinterpret_cast<u64*>(0x12000);
-    // Let's use 0x13000 for a second Page Directory to map the FB
-    u64* bridge_fb_pd = reinterpret_cast<u64*>(0x13000);
+    // the pages used in trampoline to transition from real -> protected -> long
+    auto bridge_pml4 = reinterpret_cast<u64*>(0x10000);
+    auto bridge_pdpt = reinterpret_cast<u64*>(0x11000);
+    auto bridge_pd = reinterpret_cast<u64*>(0x12000);
 
     memset(bridge_pml4, 0, 4096);
     memset(bridge_pdpt, 0, 4096);
     memset(bridge_pd, 0, 4096);
-    memset(bridge_fb_pd, 0, 4096);
 
-    // 1. Identity map the first 1GB (for code/stack)
+    // identity map the first 1GB (for code/stack)
     bridge_pml4[0] = 0x11000 | 0x3;
     bridge_pdpt[0] = 0x12000 | 0x3;
-    for (u64 i = 0; i < 32; ++i) {
+    for (auto i = 0u; i < 32; ++i) {
         bridge_pd[i] = (i * 0x200000) | 0x83;
-    }
-
-    // 2. Identity map the Framebuffer in the Bridge tables
-    u64 fb_phys = reinterpret_cast<uptr>(frame_buffer.pixels);
-    u64 fb_size = frame_buffer.stride * frame_buffer.height * sizeof(u32);
-
-    // Find which 1GB slot the FB belongs to
-    u64 fb_pdpt_idx = (fb_phys >> 30) & 0x1FF;
-    bridge_pdpt[fb_pdpt_idx] = reinterpret_cast<uptr>(bridge_fb_pd) | 0x3;
-
-    // Map the FB range using 2MB pages
-    u64 fb_start_2mb = fb_phys >> 21;
-    u64 fb_pages = (fb_size + 0x1FFFFF) >> 21;
-    for (u64 i = 0; i < fb_pages; ++i) {
-        u64 current_phys = (fb_start_2mb + i) << 21;
-        bridge_fb_pd[(current_phys >> 21) & 0x1FF] = current_phys | 0x83;
     }
 
     asm volatile("wbinvd" ::: "memory");
 
-    for (u8 i = 0; i < core_count; ++i) {
-        // Skip the BSP (the core currently running this code)
-        // Usually the BSP has APIC ID 0, but we check specifically
+    for (auto i = 0u; i < core_count; ++i) {
+        // skip the bsp (the core currently running this code)
+        // usually the bsp has apic id 0, but check specifically
         auto bsp_id = (apic.local[0x020 / 4] >> 24) & 0xff;
         if (cores[i].apic_id == bsp_id) {
             continue;
         }
 
-        // Visual: BSP is starting to process Core i (Yellow)
+        // visual: bsp is starting to process core i (yellow)
         fill_rect(0, i * 15, 10, 10, 0xFFFFFF00);
         ap_boot_flag = 0;
         asm volatile("mfence" ::: "memory");
 
-        // 1. Allocate a unique stack for this specific core
-        // Each core gets its own 4KB page
-        void* ap_stack = allocate_page();
-        u64 stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
+        // allocate a unique stack for this specific core
+        auto ap_stack = allocate_page();
+        auto stack_top = reinterpret_cast<uptr>(ap_stack) + 4096;
 
-        // 2. Prepare the trampoline with the target function
+        // prepare the trampoline with the target function
         start_task(u64(bridge_pml4), stack_top, ap_main);
 
-        // Visual: SIPI Sent (Orange)
+        // visual: sipi sent (orange)
         fill_rect(10, i * 15, 10, 10, 0xFFFFa500);
 
-        // 3. Send the INIT-SIPI-SIPI sequence via the APIC
-        // We use the APIC ID found in the MADT
+        // send the init-sipi-sipi sequence via the apic
         send_init_sipi(cores[i].apic_id, 0x8000);
 
-        // Visual: BSP entered wait loop (Blue)
+        // visual: bsp entered wait loop (blue)
         fill_rect(20, i * 15, 10, 10, 0x0000ffff);
 
-        serial_print("Kicked core ID: ");
+        serial_print("kicked core id: ");
         serial_print_hex_byte(cores[i].apic_id);
         serial_print("\n");
 
         // mfence BEFORE reading flag
-        u64 timeout = 0;
-        while (true) {
-            // Ensure we see the latest value
-            asm volatile("mfence" ::: "memory");
-
-            volatile u8 flag = ap_boot_flag;
-            if (flag != 0) {
-                break;
-            }
-
+        while (ap_boot_flag == 0) {
             asm volatile("pause");
-
-            if (++timeout > 0x10000000) {
-                // Visual: Red (timeout)
-                fill_rect(30, i * 15, 10, 10, 0xffff0000);
-                serial_print("TIMEOUT\n");
-                break;
-            }
-
-            // Heartbeat every 16M iterations
-            if ((timeout & 0xFFFFFF) == 0) {
-                fill_rect(30, i * 15, 10, 10, 0xff444444);
-            }
-        }
-
-        if (ap_boot_flag == 1) {
-            // Visual: AP SUCCESS (Green)
-            fill_rect(40, i * 15, 10, 10, 0xff00ff00);
         }
     }
 
-    serial_print("All cores initialized.\n");
-
-    // screen_fill(0xFF00FF00);
-    if (ap_boot_flag != 0) {
-        asm volatile("cli");
-        asm volatile("hlt");
-    }
+    serial_print("all cores initialized.\n");
 }
 
 } // namespace
@@ -959,8 +896,8 @@ auto init_cores() {
     init_cores();
 
     serial_print("osca_start\n");
-    //    osca_start();
-    while (true) {
-        asm volatile("hlt");
-    }
+    osca_start();
+    // while (true) {
+    //     asm volatile("hlt");
+    // }
 }

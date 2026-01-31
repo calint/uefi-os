@@ -15,16 +15,16 @@ trampoline_start:
     # bx acts as our base pointer
     movw $TRAMPOLINE_BASE, %bx
 
-    # Calculate 16-bit offset of the GDT pointer relative to DS (which is 0)
+    # calculate 16-bit offset of the gdt pointer relative to ds (which is 0)
     movw $(early_gdt_ptr - trampoline_start), %si
     addw %bx, %si  # bx is 0x8000
-    lgdt (%si)     # Load GDT using the absolute address 0x8000 + offset
+    lgdt (%si)     # load gdt using the absolute address 0x8000 + offset
 
     movl %cr0, %eax
     orl  $1, %eax
     movl %eax, %cr0
 
-    # Far jump to 32-bit Protected Mode. Syntax: ljmp $selector, $offset
+    # jump to 32-bit protected mode
     ljmp $0x08, $(TRAMPOLINE_BASE + (protected_mode - trampoline_start))
 
 .code32
@@ -34,71 +34,51 @@ protected_mode:
     movw %ax, %es
     movw %ax, %ss
 
-    # Access the config struct via esi
+    # access the config struct via esi
     movl $(TRAMPOLINE_BASE + (trampoline_config_data - trampoline_start)), %esi
 
-    # Enable PAE
+    # enable pae
     movl %cr4, %eax
     orl  $(1 << 5), %eax
     movl %eax, %cr4
 
-    # Load CR3 from the first 4 bytes of our struct
-    movl (%esi), %eax
+    # load cr3 from the first 4 bytes of our struct
+    movl 0(%esi), %eax
     movl %eax, %cr3
 
-    # Enable Long Mode in EFER MSR
+    # enable long mode in efer msr
     movl $0xc0000080, %ecx
     rdmsr
     orl  $(1 << 8), %eax
     wrmsr
 
-    # Enable Paging
+    # enable paging
     movl %cr0, %eax
     orl  $(1 << 31), %eax
     movl %eax, %cr0
 
-    # --- Step 2: Protected Mode Heartbeat ---
-    mov $0x3f8, %dx
-    mov $0x50, %al  # 'P'
-    out %al, %dx
-    # --------------------------
-
-    # Inside protected_mode, after enabling paging:
-    # Use selector 0x18 instead of 0x08
+    # inside protected_mode, after enabling paging: use selector 0x18 instead of
+    # 0x08
     ljmp $0x18, $(TRAMPOLINE_BASE + (long_mode_entry - trampoline_start))
 
 .code64
 long_mode_entry:
-    # 1. Point to the config struct
+    # point to the config struct
     movq $(TRAMPOLINE_BASE + (trampoline_config_data - trampoline_start)), %rsi
-    
-    # --- DEBUG MILESTONE: DRAW WHITE LINE ---
-    # Offset 32 in TrampolineConfig is fb_physical
-    movq 32(%rsi), %rdi   
-    movl $0xFFFFFFFF, %eax # White pixel color
-    movq $100, %rcx        # Draw 500 pixels
-    
-.debug_line_loop:
-    movl %eax, (%rdi)      # Write pixel
-    addq $4, %rdi          # Move to next pixel (4 bytes per pixel)
-    loop .debug_line_loop
-
-    # ----------------------------------------
-    # --- THE HANDOVER ---
+  
     # We are currently on the Bridge (0x10000). 
     # Now we switch to the REAL kernel tables that map > 4GB.
     movq 24(%rsi), %rax   # 24 = offset of final_pml4
     movq %rax, %cr3       # CPU can now see the high-memory kernel!
-    # --------------------
 
-    # 2. Setup segments and stack
+    # setup segments and stack
     xorl %eax, %eax
     movw %ax, %ds
     movw %ax, %es
     movq 8(%rsi), %rsp
     movq %rsp, %rbp
-    
-    # 3. Now the call to ap_main (e.g., 0x14000xxxx) will succeed!
+
+    # now the call target
     movq 16(%rsi), %rax
     call *%rax
 
