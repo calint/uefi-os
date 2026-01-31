@@ -697,9 +697,6 @@ extern "C" volatile u8 ap_boot_flag = 0;
     mfence();
     //--
 
-    // ensure all stores are globally visible
-    sfence();
-
     init_gdt();
     init_idt();
 
