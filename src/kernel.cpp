@@ -336,6 +336,10 @@ auto init_paging() -> void {
     auto heap_start = u64(heap.start);
     auto heap_size = heap.size;
 
+    // flag that is true after scanning memory if trampoline and protected mode
+    // pages are in conventional memory
+    auto trampoline_safe = false;
+
     // page attribute flags
     // p: present; rw: read/write
     auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
@@ -368,11 +372,22 @@ auto init_paging() -> void {
             // general purpose ra
             serial_print("* memory\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+
+            // check if range covers the trampoline and page table ram
+            if (d->PhysicalStart <= 0x8000 &&
+                d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'3000) {
+                trampoline_safe = true;
+            }
         } else if (d->Type == EfiMemoryMappedIO) {
             // generic hardware mmio regions
             serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
+    }
+
+    if (!trampoline_safe) {
+        serial_print("abort: memory used by trampoline not free\n");
+        panic(0x00'00'ff'ff);
     }
 
     serial_print("* apic mmio\n");
