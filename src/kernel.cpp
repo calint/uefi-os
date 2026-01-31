@@ -4,7 +4,7 @@
 
 // critical addresses:
 // 0x0'8000 - ?       : start core trampoline code
-// 0x1'0000 - 0x1'2fff: pml4 for protected mode when in trampoline code
+// 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
 
 FrameBuffer frame_buffer;
 MemoryMap memory_map;
@@ -14,7 +14,7 @@ Core cores[MAX_CORES];
 u8 core_count = 0;
 Heap heap;
 
-// required by msvc/clang abi when floating-point arithmetic is used.
+// required by msvc/clang abi when floating-point arithmetic is used
 extern "C" i32 _fltused;
 extern "C" i32 _fltused = 0;
 
@@ -709,7 +709,7 @@ extern "C" volatile u8 ap_boot_flag = 0;
 }
 
 auto delay_cycles(u64 cycles) -> void {
-    for (u64 i = 0; i < cycles; i++) {
+    for (auto i = 0u; i < cycles; ++i) {
         asm volatile("pause" ::: "memory");
     }
 }
@@ -749,7 +749,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // re-select target apic id (intel requirement)
     apic.local[0x310 / 4] = u32(apic_id) << 24;
 
-    // send second sipi; required by intel for reliability
+    // send second sipi (intel requirement)
     apic.local[0x300 / 4] = 0x00004600 | vector;
 
     // final delivery check
@@ -811,10 +811,10 @@ auto init_cores() {
     memset(protected_mode_pd, 0, 4096);
 
     // identity map the first 1GB (for code/stack)
-    protected_mode_pml4[0] = 0x11000 | 0x3;
-    protected_mode_pdpt[0] = 0x12000 | 0x3;
+    protected_mode_pml4[0] = 0x11000 | PAGE_P | PAGE_RW;
+    protected_mode_pdpt[0] = 0x12000 | PAGE_P | PAGE_RW;
     for (auto i = 0u; i < 32; ++i) {
-        protected_mode_pd[i] = (i * 0x200000) | 0x83;
+        protected_mode_pd[i] = (i * 0x200000) | PAGE_P | PAGE_RW | PAGE_PS;
     }
 
     asm volatile("wbinvd" ::: "memory");
