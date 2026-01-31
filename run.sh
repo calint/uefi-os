@@ -47,6 +47,7 @@ clang -target x86_64-unknown-windows-msvc \
     uefi.o kernel_asm.o kernel.o osca.o
 
 qemu-system-x86_64 -m 16G -vga std -serial stdio \
+    -smp 8,sockets=1,cores=4,threads=2 \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
     -drive format=raw,file=fat:rw:esp # -full-screen
 

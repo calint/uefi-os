@@ -10,6 +10,8 @@ FrameBuffer frame_buffer;
 MemoryMap memory_map;
 KeyboardConfig keyboard_config;
 APIC apic;
+Core cores[MAX_CORES];
+u8 core_count = 0;
 Heap heap;
 
 // required by msvc/clang abi when floating-point arithmetic is used.
@@ -602,6 +604,7 @@ extern "C" auto kernel_on_timer() -> void {
     // the compiler is informed that this point is never reached
     __builtin_unreachable();
 }
+
 } // namespace
 
 extern "C" [[noreturn]] auto kernel_start() -> void {

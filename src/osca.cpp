@@ -125,6 +125,9 @@ namespace osca {
     print_string(col_lbl, row, 0xffffffff, "lapic id: ", 3);
     print_hex(col_val, row, 0xffffffff, lapic_id, 3);
     ++row;
+    print_string(col_lbl, row, 0xffffffff, "cores: ", 3);
+    print_hex(col_val, row, 0xffffffff, core_count, 3);
+    ++row;
 
     interrupts_enable();
 

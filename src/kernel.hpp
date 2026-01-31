@@ -39,10 +39,17 @@ struct APIC {
     u32 volatile* local;
 };
 
+struct Core {
+    u8 apic_id;
+};
+
 extern MemoryMap memory_map;
 extern FrameBuffer frame_buffer;
 extern KeyboardConfig keyboard_config;
 extern APIC apic;
+auto constexpr MAX_CORES = 256u;
+extern Core cores[MAX_CORES];
+extern u8 core_count;
 extern Heap heap;
 
 auto inline outb(u16 port, u8 val) -> void {

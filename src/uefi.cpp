@@ -3,6 +3,10 @@
 #include "kernel.hpp"
 
 namespace {
+
+auto constexpr MAX_IO_APICS = 8u;
+auto constexpr MAX_CORES = 256u;
+
 // efi guid comparison
 // performs a robust byte-by-byte comparison of two efi guids
 auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
@@ -130,14 +134,14 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // i/o apics found in the system (most systems < 8)
     struct [[gnu::packed]] MADT_IOAPIC {
-        u8 type;
+        u8 type; // 1
         u8 len;
         u8 id;
         u8 res;
         u32 address;
         u32 gsi_base;
     };
-    MADT_IOAPIC io_apics[8];
+    MADT_IOAPIC io_apics[MAX_IO_APICS];
     auto io_apic_count = 0u;
 
     // find apic values and keyboard configuration
@@ -170,12 +174,28 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
                 switch (entry->type) {
 
+                case 0: {
+                    struct [[gnu::packed]] MADT_LAPIC {
+                        u8 type;   // 0
+                        u8 length; // 8
+                        u8 processor_id;
+                        u8 apic_id; // id used to target the core via ipi
+                        u32 flags;  // bit 0: enabled, bit 1: online capable
+                    };
+                    auto core = reinterpret_cast<MADT_LAPIC*>(curr);
+                    if (core->flags & 0x03) { // if enabled or online capable
+                        cores[core_count] = {.apic_id = core->apic_id};
+                        ++core_count;
+                    }
+                    break;
+                }
                 // i/o apic: physical mmio address and gsi range for an external
                 // interrupt controller
                 case 1: {
-                    if (io_apic_count >= 8) {
-                        console_print(
-                            sys, u"warning: >8 IOAPICs, ignoring extras\n");
+                    if (io_apic_count >= sizeof(io_apics)) {
+                        console_print(sys,
+                                      u"abort: more IOAPICs than configured");
+                        return EFI_ABORTED;
                     } else {
                         io_apics[io_apic_count] =
                             *reinterpret_cast<MADT_IOAPIC*>(curr);
