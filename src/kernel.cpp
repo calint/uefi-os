@@ -2,6 +2,11 @@
 
 #include "kernel.hpp"
 
+// failure model:
+// - unexpected conditions reboot the system
+// - no recovery paths implemented
+// - correctness assumed
+
 // critical addresses:
 // 0x0'8000 - ?       : start core trampoline code
 // 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
@@ -405,9 +410,8 @@ auto init_paging() -> void {
     // wrmsr: write edx:eax back to ia32_pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 
-    // wbinvd: write back and invalidate cache
-    // ensures no stale cache lines exist after attribute change
-    asm volatile("wbinvd" ::: "memory");
+    // PAT (Page Attribute Table) configured before CR3 activation; no cache
+    // flush required
 
     // activate the new tables
     asm volatile("mov %0, %%cr3" : : "r"(long_mode_pml4) : "memory");
@@ -777,6 +781,10 @@ auto init_cores() {
     protected_mode_pml4[0] = 0x1'1000 | PAGE_P | PAGE_RW;
     protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
     protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
+
+    // note: page tables are in WB cacheable RAM
+    //       x86 cache coherence guarantees visibility to APs
+    //       no cache flushes or fences required
 
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
