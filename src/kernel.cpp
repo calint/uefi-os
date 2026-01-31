@@ -387,7 +387,7 @@ auto init_paging() -> void {
     map_range(heap_start, heap_size, RAM_FLAGS);
 
     serial_print("* trampoline\n");
-    // Explicitly map the first 1MB as identity mapped (including 0x8000)
+    // explicitly map the first 1MB as identity mapped (including 0x8000)
     map_range(0x0, 0x100000, RAM_FLAGS);
 
     // config pat: set pa4 to write-combining (0x01)
