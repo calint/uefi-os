@@ -749,16 +749,17 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto run_core(u64 trampoline_dest_addr, u64 bridge_pml4, u64 stack_addr,
+auto run_core(uptr trampoline_dest, uptr bridge_pml4, uptr stack,
               auto (*task)()->void) -> void {
+
     // calculate size using the addresses of the labels
     auto start_addr = uptr(kernel_asm_run_core_start);
     auto end_addr = uptr(kernel_asm_run_core_end);
     auto code_size = end_addr - start_addr;
 
     // copy the code.
-    memcpy(reinterpret_cast<void*>(trampoline_dest_addr),
-           kernel_asm_run_core_start, code_size);
+    memcpy(reinterpret_cast<void*>(trampoline_dest), kernel_asm_run_core_start,
+           code_size);
 
     // calculate the offset of the config data relative to the start
     auto config_label_addr = uptr(kernel_asm_run_core_config);
@@ -770,12 +771,12 @@ auto run_core(u64 trampoline_dest_addr, u64 bridge_pml4, u64 stack_addr,
         u64 entry_point;
         u64 final_pml4;
     };
-    auto config = reinterpret_cast<TrampolineConfig*>(trampoline_dest_addr +
-                                                      config_offset);
+    auto config =
+        reinterpret_cast<TrampolineConfig*>(trampoline_dest + config_offset);
 
     // fill the values
     config->bridge_pml4 = bridge_pml4;
-    config->stack_addr = stack_addr;
+    config->stack_addr = stack;
     config->entry_point = u64(task);
     config->final_pml4 = u64(boot_pml4);
 
