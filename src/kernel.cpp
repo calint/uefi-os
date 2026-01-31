@@ -692,6 +692,7 @@ extern "C" volatile u8 ap_boot_flag = 0;
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
     ap_boot_flag = 1;
+    wbinvd();
 
     // ensure all stores are globally visible
     sfence();
@@ -770,23 +771,23 @@ auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
-    auto protected_mode_pml4 = reinterpret_cast<u64*>(0x10000);
-    auto protected_mode_pdpt = reinterpret_cast<u64*>(0x11000);
-    auto protected_mode_pd = reinterpret_cast<u64*>(0x12000);
+    auto protected_mode_pml4 = reinterpret_cast<u64*>(0x1'0000);
+    auto protected_mode_pdpt = reinterpret_cast<u64*>(0x1'1000);
+    auto protected_mode_pd = reinterpret_cast<u64*>(0x1'2000);
 
     memset(protected_mode_pml4, 0, 4096);
     memset(protected_mode_pdpt, 0, 4096);
     memset(protected_mode_pd, 0, 4096);
 
     // identity map the first 1GB (for code/stack)
-    protected_mode_pml4[0] = 0x11000 | PAGE_P | PAGE_RW;
-    protected_mode_pdpt[0] = 0x12000 | PAGE_P | PAGE_RW;
+    protected_mode_pml4[0] = 0x1'1000 | PAGE_P | PAGE_RW;
+    protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
     for (auto i = 0u; i < 32; ++i) {
-        protected_mode_pd[i] = (i * 0x200000) | PAGE_P | PAGE_RW | PAGE_PS;
+        protected_mode_pd[i] = (i * 0x20'0000) | PAGE_P | PAGE_RW | PAGE_PS;
     }
 
-    // flush caches
-    asm volatile("wbinvd" ::: "memory");
+    // flush caches so cores can see the pages
+    wbinvd();
 
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
@@ -798,10 +799,6 @@ auto init_cores() {
 
         // visual: bsp is starting to process core i (yellow)
         fill_rect(0, i * 15, 10, 10, 0xffffff00);
-        ap_boot_flag = 0;
-
-        // ensure all stores are globally visible
-        sfence();
 
         // allocate a unique stack for this specific core
         auto stack = allocate_page();
@@ -835,11 +832,12 @@ auto init_cores() {
         config->task = uptr(run_core);
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
-        // ensure the data is written is globally visible
-        sfence();
-
         // visual: sipi sent (orange)
         fill_rect(10, i * 15, 10, 10, 0xffffa500);
+
+        // the core sets flag to 1 once it has started
+        ap_boot_flag = 0;
+        wbinvd();
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
