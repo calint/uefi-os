@@ -702,7 +702,7 @@ extern "C" volatile u8 ap_boot_flag = 0;
         }
     }
 
-    osca::run_task(core_index);
+    osca::run_core(core_index);
 }
 
 auto delay_cycles(u64 cycles) -> void {

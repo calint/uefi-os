@@ -103,5 +103,5 @@ namespace osca {
 [[noreturn]] auto start() -> void;
 auto on_keyboard(u8 scancode) -> void;
 auto on_timer() -> void;
-[[noreturn]] auto run_task(u32 core_index) -> void;
+[[noreturn]] auto run_core(u32 core_index) -> void;
 } // namespace osca

@@ -188,7 +188,7 @@ auto on_keyboard(u8 scancode) -> void {
     }
 }
 
-auto run_task(u32 core_index) -> void {
+auto run_core(u32 core_index) -> void {
     // draw a unique rectangle for this core
     auto x_pos = core_index * 60;
     auto y_pos = 300u;
