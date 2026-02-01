@@ -17,6 +17,8 @@ struct FrameBuffer {
     u32 stride;
 };
 
+extern FrameBuffer frame_buffer;
+
 struct MemoryMap {
     void* buffer;
     u64 size;
@@ -24,32 +26,34 @@ struct MemoryMap {
     u32 descriptor_version;
 };
 
+extern MemoryMap memory_map;
+
 struct KeyboardConfig {
     u32 gsi;
     u32 flags;
 };
 
-struct Heap {
-    void* start;
-    u64 size;
-};
+extern KeyboardConfig keyboard_config;
 
 struct APIC {
     u32 volatile* io;
     u32 volatile* local;
 };
 
+extern APIC apic;
+
 struct Core {
     u8 apic_id;
 };
 
-extern MemoryMap memory_map;
-extern FrameBuffer frame_buffer;
-extern KeyboardConfig keyboard_config;
-extern APIC apic;
-auto constexpr MAX_CORES = 256u;
-extern Core cores[MAX_CORES];
+extern Core cores[];
 extern u8 core_count;
+
+struct Heap {
+    void* start;
+    u64 size;
+};
+
 extern Heap heap;
 
 auto inline outb(u16 port, u8 val) -> void {
@@ -95,7 +99,7 @@ auto inline serial_print_dec(u64 val) -> void {
         return;
     }
 
-    // u64 max is 18,446,744,073,709,551,615 (20 digits)
+    // u64 max is 20 digits
     u8 buffer[21];
     auto i = 0u;
 
@@ -126,7 +130,7 @@ auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 namespace osca {
 [[noreturn]] auto start() -> void;
+[[noreturn]] auto run_core(u32 core_index) -> void;
 auto on_keyboard(u8 scancode) -> void;
 auto on_timer() -> void;
-[[noreturn]] auto run_core(u32 core_index) -> void;
 } // namespace osca

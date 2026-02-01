@@ -15,7 +15,7 @@ FrameBuffer frame_buffer;
 MemoryMap memory_map;
 KeyboardConfig keyboard_config;
 APIC apic;
-Core cores[MAX_CORES];
+Core cores[256];
 u8 core_count = 0;
 Heap heap;
 
