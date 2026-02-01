@@ -76,26 +76,28 @@ kernel_asm_run_core_start:
 
     cli
     xorw %ax, %ax
-    movw %ax, %ds
+    movw %ax, %ds          # data segment to 0
 
-    # bx acts as our base pointer
+    # bx acts as base pointer to trampoline location (code of this function)
     movw $TRAMPOLINE_BASE, %bx
 
     # calculate 16-bit offset of the gdt pointer relative to ds (which is 0)
-    movw $(.early_gdt_ptr - .entry), %si
-    addw %bx, %si  # bx is 0x8000
-    lgdt (%si)     # load gdt using the absolute address 0x8000 + offset
+    movw $(.gdt_ptr - .entry), %si
+    addw %bx, %si          # si = 0x8000 + offset
+    lgdt (%si)             # load global descriptor table
 
+    # enter protected mode
     movl %cr0, %eax
-    orl  $1, %eax
+    orl  $1, %eax          # set bit 0: protected mode enable (pe)
     movl %eax, %cr0
 
-    # jump to 32-bit protected mode
+    # jump to 32-bit protected mode using 2'nd entry in gdt
     ljmp $0x08, $(TRAMPOLINE_BASE + (.protected_mode - .entry))
 
 .code32
 .protected_mode:
-    movw $0x10, %ax
+    # initiate segment register with data segment
+    movw $0x10, %ax        # 0x10 is 32-bit data selector
     movw %ax, %ds
     movw %ax, %es
     movw %ax, %ss
@@ -103,38 +105,37 @@ kernel_asm_run_core_start:
     # access the config struct via esi
     movl $(TRAMPOLINE_BASE + CONFIG_OFFSET), %esi
 
-    # enable pae
+    # enable physical address extension
     movl %cr4, %eax
-    orl  $(1 << 5), %eax
+    orl  $(1 << 5), %eax   # set bit 5: physical address extension (pae)
     movl %eax, %cr4
 
-    # load cr3 from the first 4 bytes of our struct
-    movl 0(%esi), %eax
+    # load bridge page table
+    movl 0(%esi), %eax     # 0 = offset of protected_mode_pml4
     movl %eax, %cr3
 
-    # enable long mode in efer msr
+    # enable long mode
     movl $0xc0000080, %ecx
     rdmsr
-    orl  $(1 << 8), %eax
+    orl  $(1 << 8), %eax   # set bit 8: long mode enable (lme)
     wrmsr
 
     # enable paging
     movl %cr0, %eax
-    orl  $(1 << 31), %eax
+    orl  $(1 << 31), %eax  # set bit 31: paging (pg)
     movl %eax, %cr0
 
-    # inside protected_mode, after enabling paging: use selector 0x18 instead of
-    # 0x08
+    # jump to 64-bit long mode using 4'th entry in gdt
     ljmp $0x18, $(TRAMPOLINE_BASE + (.long_mode - .entry))
 
 .code64
 .long_mode:
     # point to the config struct
     movq $(TRAMPOLINE_BASE + CONFIG_OFFSET), %rsi
-  
-    # currently using bridge paging at 0x1'0000 
-    # switch to the real kernel tables
-    movq 24(%rsi), %rax   # 24 = offset of final_pml4
+ 
+    # currently using temporary paging at 0x1'0000 
+    # switch to final kernel tables
+    movq 24(%rsi), %rax   # 24 = offset of long_mode_pml4
     movq %rax, %cr3
 
     # setup segments
@@ -147,23 +148,19 @@ kernel_asm_run_core_start:
     movq %rsp, %rbp
 
     # call target
-    movq 16(%rsi), %rax   # 16 = offset of target pointer
-    call *%rax
-
-.halt:
-    hlt
-    jmp .halt
+    movq 16(%rsi), %rax   # 16 = offset of call target pointer
+    call *%rax            # calling no return task
 
 .align 16
-.early_gdt:
+.gdt:
     .quad 0x0000000000000000 # null
     .quad 0x00cf9a000000ffff # 0x08: 32-bit code (for protected_mode)
     .quad 0x00cf92000000ffff # 0x10: 32-bit data
-    .quad 0x00af9a000000ffff # 0x18: 64-bit code (L-bit set for long_mode_entry)
+    .quad 0x00af9a000000ffff # 0x18: 64-bit code (l-bit set for long_mode_entry)
 
-.early_gdt_ptr:
-    .word . - .early_gdt - 1
-    .long TRAMPOLINE_BASE + (.early_gdt - .entry)
+.gdt_ptr:
+    .word . - .gdt - 1
+    .long TRAMPOLINE_BASE + (.gdt - .entry)
 
 .align 16
 kernel_asm_run_core_config:
