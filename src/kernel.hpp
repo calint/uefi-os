@@ -67,7 +67,7 @@ auto inline inb(u16 port) -> u8 {
 }
 
 extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
-    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory", "cc");
+    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
     return s;
 }
 
@@ -120,7 +120,7 @@ auto inline serial_print_dec(u64 val) -> void {
 auto inline serial_print_hex_byte(u8 val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 4; i >= 0; i -= 4) {
-        outb(0x3F8, hex_chars[(val >> i) & 0xF]);
+        outb(0x3f8, hex_chars[(val >> i) & 0xf]);
     }
 }
 
