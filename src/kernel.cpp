@@ -404,9 +404,8 @@ auto init_paging() -> void {
 
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
-    u32 low;
-    u32 high;
     // rdmsr: read 64-bit model specific register into edx:eax
+    u32 low, high;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
     // pat index 4 (pa4): bits 32-34 of the 64-bit msr
