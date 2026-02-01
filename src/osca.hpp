@@ -46,16 +46,22 @@ class Jobs final {
   public:
     // called from only 1 thread
     // copies data into the job
-    // data size must be less than cache line size - 8 (the function pointer)
+    // blocks while queue is full
+    // data size must not be greater than 56 bytes (cach line size - func ptr)
     template <job T> auto add(T job) -> void {
         static_assert(sizeof(T) <= JOB_DATA_SIZE);
+
+        // if queue is full wait
+        while (head - tail >= JOB_QUEUE_SIZE) {
+            asm volatile("pause");
+        }
 
         auto i = head % JOB_QUEUE_SIZE;
         queue[i].func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(queue[i].data, &job, sizeof(T));
 
         // tell compiler: "Finish all previous writes before moving on."
-        // asm volatile("" ::: "memory");
+        asm volatile("" ::: "memory");
 
         head += 1;
     }
