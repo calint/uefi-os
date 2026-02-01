@@ -57,6 +57,7 @@ struct Heap {
 extern Heap heap;
 
 auto constexpr CACHE_LINE_SIZE = 64u;
+// note: almost all modern x86_64 processors (intel and amd)
 
 auto inline outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
