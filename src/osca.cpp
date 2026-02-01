@@ -3,6 +3,14 @@
 
 namespace {
 
+auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+    for (auto i = y; i < y + height; ++i) {
+        for (auto j = x; j < x + width; ++j) {
+            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
+        }
+    }
+}
+
 auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
     auto fb = frame_buffer.pixels;
     auto stride = frame_buffer.stride;
@@ -13,13 +21,8 @@ auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
     for (auto i = 0u; i < 8; ++i) {
         for (auto j = 0u; j < 8; ++j) {
             if (glyph[i] & (1 << (7 - j))) {
-                // draw a scale x scale block of pixels
-                for (auto sy = 0u; sy < scale; ++sy) {
-                    for (auto sx = 0u; sx < scale; ++sx) {
-                        fb[(row * 8 * scale + (i * scale) + sy) * stride +
-                           (col * 8 * scale + (j * scale) + sx)] = color;
-                    }
-                }
+                draw_rect(col * 8 * scale + j * scale,
+                          row * 8 * scale + i * scale, scale, scale, color);
             }
         }
     }
@@ -76,20 +79,9 @@ auto test_simd_support() -> void {
         colr = 0x00ff0000;
         serial_print("failed\n");
     }
-    for (auto y = 400u; y < 420; ++y) {
-        for (auto x = 600u; x < 620; ++x) {
-            frame_buffer.pixels[y * frame_buffer.stride + x] = colr;
-        }
-    }
+    draw_rect(600u, 400u, 20u, 20u, colr);
 }
 
-auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
-    for (auto i = y; i < y + height; ++i) {
-        for (auto j = x; j < x + width; ++j) {
-            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
-        }
-    }
-}
 } // namespace
 
 namespace osca {

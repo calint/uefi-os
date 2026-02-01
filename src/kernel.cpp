@@ -675,14 +675,6 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
-    for (auto i = y; i < y + height; ++i) {
-        for (auto j = x; j < x + width; ++j) {
-            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
-        }
-    }
-}
-
 // In your global scope
 extern "C" volatile u8 run_core_started_flag;
 extern "C" volatile u8 run_core_started_flag = 0;
