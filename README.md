@@ -5,7 +5,6 @@
 * experiment with uefi bootable image
 * render graphics on screen
 * keyboard
-* pointing device
 * timer
 * tasks
 
