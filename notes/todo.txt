@@ -1,5 +1,8 @@
-[ ] map exceptions interrupts
-[ ] handle spurious interrupts
+[ ] look at umonitor / umwai instead of pause
 [ ] unmap the Null page
+[-] map exceptions interrupts
+    => unless spurious crashes from misfiring interrupts: no
+[-] handle spurious interrupts
+    => no such detected yet
 [x] keyboard interrupt
 [x] timer interrupt
