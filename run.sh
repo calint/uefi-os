@@ -38,7 +38,7 @@ clang++ $FLAGS $CPPFLAGS $WARNINGS \
     -I /usr/include/efi/ \
     -c src/osca.cpp -o osca.o
 
-clang -target x86_64-unknown-windows-msvc \
+clang++ -target x86_64-unknown-windows-msvc \
     -nostdlib \
     -fuse-ld=lld \
     -Wl,-entry:efi_main \
