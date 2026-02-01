@@ -40,30 +40,30 @@ alignas(16) static u8 kernel_stack[16384 * 16];
     }
 }
 
-auto screen_fill(u32 color) -> void {
-    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
-        frame_buffer.pixels[i] = color;
-    }
-}
+// auto screen_fill(u32 color) -> void {
+//     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+//         frame_buffer.pixels[i] = color;
+//     }
+// }
 
-auto fill_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
-    auto fb = frame_buffer.pixels;
-    auto stride = frame_buffer.stride;
-
-    // Bounds checking
-    if (x >= frame_buffer.width || y >= frame_buffer.height)
-        return;
-    if (x + width > frame_buffer.width)
-        width = frame_buffer.width - x;
-    if (y + height > frame_buffer.height)
-        height = frame_buffer.height - y;
-
-    for (u32 i = 0; i < height; ++i) {
-        for (u32 j = 0; j < width; ++j) {
-            fb[(y + i) * stride + (x + j)] = color;
-        }
-    }
-}
+// auto fill_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+//     auto fb = frame_buffer.pixels;
+//     auto stride = frame_buffer.stride;
+//
+//     // Bounds checking
+//     if (x >= frame_buffer.width || y >= frame_buffer.height)
+//         return;
+//     if (x + width > frame_buffer.width)
+//         width = frame_buffer.width - x;
+//     if (y + height > frame_buffer.height)
+//         height = frame_buffer.height - y;
+//
+//     for (u32 i = 0; i < height; ++i) {
+//         for (u32 j = 0; j < width; ++j) {
+//             fb[(y + i) * stride + (x + j)] = color;
+//         }
+//     }
+// }
 
 // serial (uart) init
 auto inline init_serial() -> void {
@@ -731,6 +731,51 @@ auto delay_cycles(u64 cycles) -> void {
     }
 }
 
+auto delay_us(u64 us) -> void {
+    if (us == 0)
+        return;
+
+    // the pit frequency is a fixed hardware constant: 1.193182 mhz.
+    auto constexpr pit_base_freq = 1193182u;
+
+    // calculate how many pit ticks are required for the requested microseconds.
+    u32 ticks = u32((us * pit_base_freq) / 1000000);
+
+    // the pit counter is only 16-bit (max 65535).
+    // 65535 ticks at 1.19mhz is roughly 55ms.
+    while (ticks > 0) {
+        u16 current_batch = (ticks > 0xffff) ? 0xffff : u16(ticks);
+
+        // configure pit channel 2:
+        // bits 7-6: 10 (channel 2)
+        // bits 5-4: 11 (access mode: low/high byte)
+        // bits 3-1: 000 (mode 0: interrupt on terminal count)
+        // bit 0: 0 (binary mode)
+        outb(0x43, 0b10'11'00'00);
+
+        // load the 16-bit divisor
+        outb(0x42, u8(current_batch & 0xff));        // low byte
+        outb(0x42, u8((current_batch >> 8) & 0xff)); // high byte
+
+        // start the timer by gating channel 2
+        // port 0x61, bit 0 controls the gate for channel 2
+        u8 port_61 = inb(0x61);
+
+        // ensure speaker (bit 1) is off, gate (bit 0) is on.
+        outb(0x61, (port_61 & ~0x02) | 0x01);
+
+        // poll bit 5 of port 0x61
+        // this bit goes high when the pit counter hits zero
+        while (!(inb(0x61) & 0x20)) {
+            asm volatile("pause");
+        }
+
+        // stop the gate and decrement our total tick count.
+        outb(0x61, port_61 & ~0x01);
+        ticks -= current_batch;
+    }
+}
+
 auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // select target core via high dword of icr
     apic.local[0x310 / 4] = u32(apic_id) << 24;
@@ -744,7 +789,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
-    delay_cycles(10'000'000);
+    delay_us(10 * 1000);
 
     // convert address to 4KB page vector; 0x8000 -> 0x08
     auto vector = (trampoline_address >> 12) & 0xff;
@@ -761,7 +806,7 @@ auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     }
 
     // 200us delay before retry (intel requirement)
-    delay_cycles(200'000);
+    delay_us(200);
 
     // re-select target apic id (intel requirement)
     apic.local[0x310 / 4] = u32(apic_id) << 24;
@@ -810,7 +855,7 @@ auto init_cores() {
         }
 
         // visual: bsp is starting to process core i (yellow)
-        fill_rect(0, i * 15, 10, 10, 0xffffff00);
+        // fill_rect(0, i * 15, 10, 10, 0xffffff00);
 
         // allocate a unique stack for this specific core
         auto stack = allocate_page();
@@ -848,13 +893,13 @@ auto init_cores() {
         run_core_started_flag = 0;
 
         // visual: sipi sent (orange)
-        fill_rect(10, i * 15, 10, 10, 0xffffa500);
+        // fill_rect(10, i * 15, 10, 10, 0xffffa500);
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // visual: bsp entered wait loop (blue)
-        fill_rect(20, i * 15, 10, 10, 0x0000ffff);
+        // fill_rect(20, i * 15, 10, 10, 0x0000ffff);
 
         serial_print("* core id: ");
         serial_print_hex_byte(cores[i].apic_id);
@@ -878,7 +923,6 @@ auto init_cores() {
     if (!verify_low_memory()) {
         panic(0xff'ff'00'00);
     }
-    screen_fill(0x0000'0000);
 
     heap = make_heap();
 
