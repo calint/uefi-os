@@ -5,18 +5,18 @@
 namespace osca {
 
 template <typename T, typename U>
-concept same_as = __is_same(T, U);
+concept is_same = __is_same(T, U);
 
 template <typename T>
-concept trivially_copyable = __is_trivially_copyable(T);
+concept is_trivially_copyable = __is_trivially_copyable(T);
 
 template <typename T>
 concept runnable = requires(T t) {
-    { t.run() } -> same_as<void>;
+    { t.run() } -> is_same<void>;
 };
 
 template <typename T>
-concept job = runnable<T> && trivially_copyable<T>;
+concept job = runnable<T> && is_trivially_copyable<T>;
 
 class Jobs final {
   public:
