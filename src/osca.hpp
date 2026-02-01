@@ -53,7 +53,11 @@ class Jobs final {
         auto i = head % JOB_QUEUE_SIZE;
         queue[i].func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(queue[i].data, &job, sizeof(T));
-        head = head + 1;
+
+        // tell compiler: "Finish all previous writes before moving on."
+        // asm volatile("" ::: "memory");
+
+        head += 1;
     }
 
     // called from multiple threads
