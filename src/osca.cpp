@@ -57,7 +57,7 @@ auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
 }
 
 auto test_simd_support() -> void {
-    serial_print("testing simd... ");
+    serial_print("  test simd: ");
 
     alignas(16) float input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     alignas(16) float output[4] = {0.0f};
@@ -71,10 +71,10 @@ auto test_simd_support() -> void {
     auto colr = u32(0);
     if (int(output[0]) == 3 && int(output[0] * 10) % 10 == 5) {
         colr = 0x0000ff00;
-        serial_print("success (result is 3.5)\n");
+        serial_print("ok\n");
     } else {
         colr = 0x00ff0000;
-        serial_print("failure (math wrong)\n");
+        serial_print("failed\n");
     }
     for (auto y = 400u; y < 420; ++y) {
         for (auto x = 600u; x < 620; ++x) {

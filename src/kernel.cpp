@@ -351,6 +351,8 @@ auto init_paging() -> void {
     // parse uefi memory map to identity-map system ram and firmware regions
     auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    auto total_mem_B = u64(0);
+    auto free_mem_B = u64(0);
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
             u64(desc) + (i * memory_map.descriptor_size));
@@ -358,21 +360,24 @@ auto init_paging() -> void {
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
             // acpi tables: must be mapped to parse hardware config later
-            serial_print("* acpi tables\n");
+            // serial_print("* acpi tables\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+            total_mem_B += d->NumberOfPages * 4096;
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
                    (d->Type == EfiBootServicesCode) ||
                    (d->Type == EfiBootServicesData)) {
             // kernel binary + current uefi stack
             // note: EfiBootServiceCode and Data is mapped because current stack
             //       is there
-            serial_print("* loaded kernel and current stack\n");
+            // serial_print("* loaded kernel and current stack\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
+            total_mem_B += d->NumberOfPages * 4096;
         } else if (d->Type == EfiConventionalMemory) {
             // general purpose ra
-            serial_print("* memory\n");
+            // serial_print("* memory\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-
+            total_mem_B += d->NumberOfPages * 4096;
+            free_mem_B += d->NumberOfPages * 4096;
             // check if range covers the trampoline and page table ram
             if (d->PhysicalStart <= 0x8000 &&
                 d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'3000) {
@@ -380,33 +385,45 @@ auto init_paging() -> void {
             }
         } else if (d->Type == EfiMemoryMappedIO) {
             // generic hardware mmio regions
-            serial_print("* mmio region\n");
+            // serial_print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
+
+    serial_print("  total: ");
+    serial_print_dec(total_mem_B / 1024);
+    serial_print(" KB\n");
+
+    serial_print("   free: ");
+    serial_print_dec(free_mem_B / 1024);
+    serial_print(" KB\n");
+
+    serial_print("   used: ");
+    serial_print_dec((total_mem_B - free_mem_B) / 1024);
+    serial_print(" KB\n");
 
     if (!trampoline_memory_is_free) {
         serial_print("abort: memory used by trampoline not free\n");
         panic(0x00'00'ff'ff);
     }
 
-    serial_print("* apic mmio\n");
+    // serial_print("* apic mmio\n");
     // map apic registers for interrupt handling
     map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
     map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
 
-    serial_print("* frame buffer\n");
+    // serial_print("* frame buffer\n");
     // map frame buffer with write-combining (pat index 4)
     auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(u64(frame_buffer.pixels),
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
 
-    serial_print("* heap\n");
+    // serial_print("* heap\n");
     // map the dynamic memory pool
     map_range(heap_start, heap_size, RAM_FLAGS);
 
-    serial_print("* trampoline\n");
+    // serial_print("* trampoline\n");
     // explicitly map the first 2MB as identity mapped (including 0x8000)
     map_range(0x0, 0x20'0000, RAM_FLAGS);
 
@@ -515,7 +532,7 @@ auto init_keyboard() -> void {
     while (inb(0x64) & 0x01) {
         inb(0x60);
         if (++flush_count > 100) {
-            serial_print("kbd: flush timeout\n");
+            serial_print("  flush timeout\n");
             break;
         }
     }
@@ -525,7 +542,7 @@ auto init_keyboard() -> void {
     auto wait_count = 0u;
     while (inb(0x64) & 0x02) {
         if (++wait_count > 100000) {
-            serial_print("kbd: controller timeout\n");
+            serial_print("  controller timeout\n");
             return;
         }
         asm volatile("pause");
@@ -541,7 +558,7 @@ auto init_keyboard() -> void {
         if (inb(0x64) & 0x01) {
             auto response = inb(0x60);
             if (response == 0xfa) {
-                serial_print("kbd: ack\n");
+                serial_print("  ack\n");
                 ack_received = true;
                 break;
             }
@@ -550,7 +567,7 @@ auto init_keyboard() -> void {
     }
 
     if (!ack_received) {
-        serial_print("warning: kbd did not ack\n");
+        serial_print("  warning: kbd did not ack\n");
     }
 }
 
@@ -658,40 +675,6 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-// verify low memory is actually usable
-auto verify_low_memory() -> bool {
-    // test critical addresses
-    u64 test_addrs[] = {0x8000, 0x1'0000, 0x1'1000, 0x1'2000, 0x1'3000};
-
-    for (auto addr : test_addrs) {
-        volatile auto ptr = reinterpret_cast<volatile u32*>(addr);
-        auto original = *ptr;
-
-        *ptr = 0xDEADBEEF;
-
-        if (*ptr != 0xDEADBEEF) {
-            serial_print("memory test failed at: ");
-            serial_print_hex(addr);
-            serial_print("\n");
-            return false;
-        }
-
-        *ptr = 0x12345678;
-
-        if (*ptr != 0x12345678) {
-            serial_print("memory test failed at: ");
-            serial_print_hex(addr);
-            serial_print("\n");
-            return false;
-        }
-
-        *ptr = original; // Restore
-    }
-
-    serial_print("low memory verified\n");
-    return true;
-}
-
 auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
     for (auto i = y; i < y + height; ++i) {
         for (auto j = x; j < x + width; ++j) {
@@ -725,33 +708,30 @@ extern "C" volatile u8 run_core_started_flag = 0;
     panic(0xffffffff);
 }
 
-auto delay_cycles(u64 cycles) -> void {
+auto inline delay_cycles(u64 cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
         asm volatile("pause" ::: "memory");
     }
 }
 
 auto delay_us(u64 us) -> void {
-    if (us == 0)
-        return;
-
     // the pit frequency is a fixed hardware constant: 1.193182 mhz.
-    auto constexpr pit_base_freq = 1193182u;
+    auto constexpr pit_base_freq = 1'193'182u;
 
     // calculate how many pit ticks are required for the requested microseconds.
-    u32 ticks = u32((us * pit_base_freq) / 1000000);
+    auto ticks = u32((us * pit_base_freq) / 1'000'000);
 
     // the pit counter is only 16-bit (max 65535).
     // 65535 ticks at 1.19mhz is roughly 55ms.
     while (ticks > 0) {
-        u16 current_batch = (ticks > 0xffff) ? 0xffff : u16(ticks);
+        auto current_batch = (ticks > 0xffff) ? 0xffffu : u16(ticks);
 
         // configure pit channel 2:
         // bits 7-6: 10 (channel 2)
         // bits 5-4: 11 (access mode: low/high byte)
         // bits 3-1: 000 (mode 0: interrupt on terminal count)
         // bit 0: 0 (binary mode)
-        outb(0x43, 0b10'11'00'00);
+        outb(0x43, 0b10'11'000'0);
 
         // load the 16-bit divisor
         outb(0x42, u8(current_batch & 0xff));        // low byte
@@ -759,7 +739,7 @@ auto delay_us(u64 us) -> void {
 
         // start the timer by gating channel 2
         // port 0x61, bit 0 controls the gate for channel 2
-        u8 port_61 = inb(0x61);
+        auto port_61 = inb(0x61);
 
         // ensure speaker (bit 1) is off, gate (bit 0) is on.
         outb(0x61, (port_61 & ~0x02) | 0x01);
@@ -846,6 +826,10 @@ auto init_cores() {
     //       x86 cache coherence guarantees visibility to APs
     //       no cache flushes or fences required
 
+    serial_print("  count: ");
+    serial_print_dec(core_count);
+    serial_print("\n");
+
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
         // usually the bsp has apic id 0, but check specifically
@@ -901,17 +885,13 @@ auto init_cores() {
         // visual: bsp entered wait loop (blue)
         // fill_rect(20, i * 15, 10, 10, 0x0000ffff);
 
-        serial_print("* core id: ");
-        serial_print_hex_byte(cores[i].apic_id);
-        serial_print("\n");
-
         // wait for core to start
         while (run_core_started_flag == 0) {
             asm volatile("pause");
         }
     }
 
-    serial_print("all cores running\n");
+    // serial_print("all cores running\n");
 }
 
 } // namespace
@@ -919,10 +899,6 @@ auto init_cores() {
 [[noreturn]] auto kernel_start() -> void {
     init_serial();
     serial_print("serial initiated\n");
-
-    if (!verify_low_memory()) {
-        panic(0xff'ff'00'00);
-    }
 
     heap = make_heap();
 

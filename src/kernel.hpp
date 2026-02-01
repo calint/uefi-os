@@ -88,6 +88,31 @@ auto inline serial_print_hex(u64 val) -> void {
     }
 }
 
+auto inline serial_print_dec(u64 val) -> void {
+    // case for zero
+    if (val == 0) {
+        outb(0x3f8, '0');
+        return;
+    }
+
+    // u64 max is 18,446,744,073,709,551,615 (20 digits)
+    u8 buffer[21];
+    auto i = 0u;
+
+    // extract digits in reverse order
+    while (val > 0) {
+        buffer[i] = u8('0' + (val % 10));
+        val /= 10;
+        ++i;
+    }
+
+    // print the buffer backwards to show digits in correct order
+    while (i > 0) {
+        --i;
+        outb(0x3f8, buffer[i]);
+    }
+}
+
 auto inline serial_print_hex_byte(u8 val) -> void {
     constexpr u8 hex_chars[] = "0123456789ABCDEF";
     for (auto i = 4; i >= 0; i -= 4) {
