@@ -11,10 +11,10 @@
 ## scope
 
 * x86-64 only
-* UEFI GOP required
-* ACPI 2.0+
-* modern PC firmware
-* no legacy BIOS
+* uefi gop required
+* acpi 2.0+
+* modern pc firmware
+* no legacy bios
 * no broken firmware tolerance
 * real-time system with all memory allocated up-front
 * program assumed correct and exceptions should reboot
