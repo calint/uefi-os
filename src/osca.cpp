@@ -175,28 +175,31 @@ auto on_keyboard(u8 scancode) -> void {
 
     kbd_intr_total++;
 
-    // clear
-    for (auto y = 20 * 8 * 3u; y < 24 * 8 * 3; ++y) {
-        for (auto x = 0u; x < frame_buffer.width; ++x) {
-            frame_buffer.pixels[y * frame_buffer.stride + x] = 0;
+    struct Job {
+        u64 seq;
+        u8 scancode;
+        auto run() -> void {
+            // clear
+            for (auto y = 20 * 8 * 3u; y < 24 * 8 * 3; ++y) {
+                for (auto x = 0u; x < frame_buffer.width; ++x) {
+                    frame_buffer.pixels[y * frame_buffer.stride + x] = 0;
+                }
+            }
+
+            // Draw big "INTR" label and count
+            print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
+            print_hex(12, 20, 0x0000ff00, kbd_intr_total, 3);
+
+            // draw the latest scancode extra large
+            print_string(1, 21, 0x00ffffff, "scancode: ", 3);
+            print_hex(12, 21, 0x00ffffff, scancode, 3);
+
+            // Keep your original color box but make it bigger
+            draw_rect(32, 0, 32, 32, u32(scancode) << 16);
         }
-    }
+    };
 
-    // Draw big "INTR" label and count
-    print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
-    print_hex(12, 20, 0x0000ff00, kbd_intr_total, 3);
-
-    // draw the latest scancode extra large
-    print_string(1, 21, 0x00ffffff, "scancode: ", 3);
-    print_hex(12, 21, 0x00ffffff, scancode, 3);
-
-    // Keep your original color box but make it bigger
-    for (auto y = 0u; y < 32; ++y) {
-        for (auto x = 32u; x < 32 + 32; ++x) {
-            frame_buffer.pixels[y * frame_buffer.stride + x] = u32(scancode)
-                                                               << 16;
-        }
-    }
+    jobs.add(Job{kbd_intr_total, scancode});
 }
 
 [[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
