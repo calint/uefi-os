@@ -88,14 +88,6 @@ namespace osca {
 
 JobQueue job_queue; // note: 0 initialized
 
-[[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
-    while (true) {
-        if (!job_queue.run_next()) {
-            asm volatile("pause");
-        }
-    }
-}
-
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
 
@@ -157,7 +149,7 @@ JobQueue job_queue; // note: 0 initialized
     test_simd_support();
 
     while (true) {
-        asm("hlt");
+        asm volatile("hlt");
     }
 }
 
@@ -208,6 +200,15 @@ auto on_keyboard(u8 scancode) -> void {
         for (auto x = 32u; x < 32 + 32; ++x) {
             frame_buffer.pixels[y * frame_buffer.stride + x] = u32(scancode)
                                                                << 16;
+        }
+    }
+}
+
+[[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
+    while (true) {
+        if (!job_queue.run_next()) {
+            // queue was for sure empty
+            asm volatile("pause");
         }
     }
 }
