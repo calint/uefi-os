@@ -124,13 +124,29 @@ auto inline serial_print_hex_byte(u8 val) -> void {
     }
 }
 
+auto inline atomic_compare_exchange(u32 volatile* target, u32 expected,
+                                    u32 desired) -> bool {
+    bool success;
+    asm volatile(
+        "lock cmpxchgl %[src], %[dest]"
+        : "=@ccz"(success),     // out: read zero flag directly (zf=1 success)
+          [dest] "+m"(*target), // out: memory location
+          "+a"(expected)        // in/out: eax register
+        : [src] "r"(desired)    // in: value to write
+        : "memory"              // clobbers
+    );
+    return success;
+}
+
 auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 [[noreturn]] auto kernel_start() -> void;
 
 namespace osca {
+
 [[noreturn]] auto start() -> void;
 [[noreturn]] auto run_core(u32 core_index) -> void;
 auto on_keyboard(u8 scancode) -> void;
 auto on_timer() -> void;
+
 } // namespace osca

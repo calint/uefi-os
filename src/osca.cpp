@@ -82,9 +82,59 @@ auto test_simd_support() -> void {
     draw_rect(600u, 400u, 20u, 20u, colr);
 }
 
+struct Job {
+    void (*work)(void*);
+    void* data;
+};
+
+auto constexpr JOB_QUEUE_LEN = 256;
+volatile Job job_queue[JOB_QUEUE_LEN];
+u32 volatile job_head = 0;
+u32 volatile job_tail = 0;
+
 } // namespace
 
 namespace osca {
+
+[[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
+    // interrupts_enable();
+
+    while (true) {
+        auto t = job_tail;
+        auto h = job_head;
+        // check if queue is empty
+        if (t == h) {
+            // friendly spin-loop hint to cpu
+            asm volatile("pause");
+            continue;
+        }
+
+        // attempt to claim the job at current_tail
+        if (atomic_compare_exchange(&job_tail, t, t + 1)) {
+            serial_print("core: ");
+            serial_print_dec(core_id);
+            // serial_print(" head: ");
+            // serial_print_dec(h);
+            // serial_print(" tail: ");
+            // serial_print_dec(t);
+            serial_print("\n");
+            auto& job = job_queue[t % JOB_QUEUE_LEN];
+            if (job.work != nullptr) {
+                job.work(job.data);
+                job.work = nullptr;
+            }
+        }
+    }
+}
+
+auto add_job(void (*work)(void*), void* data) -> void {
+    // serial_print("add job\n");
+    auto index = job_head % JOB_QUEUE_LEN;
+    job_queue[index].work = work;
+    job_queue[index].data = data;
+    job_head = job_head + 1;
+}
+
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
 
@@ -155,12 +205,21 @@ auto on_timer() -> void {
 
     serial_print(".");
 
-    ++tick;
-    for (auto y = 0u; y < 32; ++y) {
-        for (auto x = 0u; x < 32; ++x) {
-            frame_buffer.pixels[y * frame_buffer.stride + x] = tick << 6;
-        }
-    }
+    add_job(
+        [](void*) -> void {
+            // serial_print("run: ");
+            // serial_print_dec(tick);
+            // serial_print("\n");
+
+            ++tick;
+            for (auto y = 0u; y < 32; ++y) {
+                for (auto x = 0u; x < 32; ++x) {
+                    frame_buffer.pixels[y * frame_buffer.stride + x] = tick
+                                                                       << 6;
+                }
+            }
+        },
+        nullptr);
 }
 
 auto on_keyboard(u8 scancode) -> void {
@@ -192,17 +251,4 @@ auto on_keyboard(u8 scancode) -> void {
     }
 }
 
-[[noreturn]] auto run_core(u32 core_index) -> void {
-    // draw a unique rectangle for this core
-    auto x_pos = core_index * 60;
-    auto y_pos = 300u;
-    auto color = 0xff00ff00 | (core_index * 0x1234);
-
-    // interrupts_enable();
-
-    while (true) {
-        draw_rect(x_pos, y_pos, 50, 50, color);
-        ++color;
-    }
-}
 } // namespace osca
