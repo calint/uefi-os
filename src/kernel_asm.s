@@ -67,7 +67,6 @@ kernel_asm_keyboard_handler:
 // used by kernel to launch code on a core 
 //
 
-
 .code16
 kernel_asm_run_core_start:
 .entry:
@@ -133,8 +132,8 @@ kernel_asm_run_core_start:
     # point to the config struct
     movq $(TRAMPOLINE_BASE + CONFIG_OFFSET), %rsi
  
-    # currently using temporary paging at 0x1'0000 
-    # switch to final kernel tables
+    # enable final paging
+    # note: currently using temporary paging at 0x1'0000 
     movq 24(%rsi), %rax   # 24 = offset of long_mode_pml4
     movq %rax, %cr3
 
