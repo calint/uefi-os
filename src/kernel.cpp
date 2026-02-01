@@ -40,31 +40,6 @@ alignas(16) static u8 kernel_stack[16384 * 16];
     }
 }
 
-// auto screen_fill(u32 color) -> void {
-//     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
-//         frame_buffer.pixels[i] = color;
-//     }
-// }
-
-// auto fill_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
-//     auto fb = frame_buffer.pixels;
-//     auto stride = frame_buffer.stride;
-//
-//     // Bounds checking
-//     if (x >= frame_buffer.width || y >= frame_buffer.height)
-//         return;
-//     if (x + width > frame_buffer.width)
-//         width = frame_buffer.width - x;
-//     if (y + height > frame_buffer.height)
-//         height = frame_buffer.height - y;
-//
-//     for (u32 i = 0; i < height; ++i) {
-//         for (u32 j = 0; j < width; ++j) {
-//             fb[(y + i) * stride + (x + j)] = color;
-//         }
-//     }
-// }
-
 // serial (uart) init
 auto inline init_serial() -> void {
     // ier (interrupt enable register): disable all hardware interrupts
@@ -94,7 +69,7 @@ auto inline init_serial() -> void {
 }
 
 // sse (simd) init
-auto init_sse() -> void {
+auto inline init_sse() -> void {
     // cr0: control register 0
     u64 cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -124,7 +99,7 @@ auto init_sse() -> void {
 }
 
 // gdt (global descriptor table) init
-auto init_gdt() -> void {
+auto inline init_gdt() -> void {
     // legacy x86 format; mostly ignored in 64-bit but fields must exist
     struct [[gnu::packed]] GDTEntry {
         u16 limit_low;
@@ -275,7 +250,7 @@ auto constexpr USE_PAT_WC = (1ull << 12);
 
 // range mapping with hybrid page sizes
 // creates identity mappings with optimized page sizes
-auto map_range(u64 phys, u64 size, u64 flags) -> void {
+auto inline map_range(u64 phys, u64 size, u64 flags) -> void {
     // page alignment: floor start and ceil end to 4kb boundaries
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
@@ -450,7 +425,7 @@ auto init_paging() -> void {
 }
 
 // apic timer calibration
-auto calibrate_apic(u32 hz) -> u32 {
+auto inline calibrate_apic(u32 hz) -> u32 {
     // pit channel 0: set to mode 0 (interrupt on terminal count)
     // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e2b)
     outb(0x43, 0x30); // control: ch0, lo/hi, mode 0, binary
@@ -478,7 +453,7 @@ auto calibrate_apic(u32 hz) -> u32 {
 }
 
 // disables legacy pic and starts lapic timer in periodic mode
-auto init_timer() -> void {
+auto inline init_timer() -> void {
     // disable legacy pic: mask all interrupts on master (0x21) and slave (0xa1)
     // essential to prevent "spurious" interrupts from deprecated hardware
     outb(0x21, 0xff);
@@ -515,7 +490,7 @@ auto io_apic_write(u32 reg, u32 val) -> void {
 
 // keyboard and io-apic routing
 // routes keyboard irq through io-apic and enables scanning
-auto init_keyboard() -> void {
+auto inline init_keyboard() -> void {
     // get local apic id of the current cpu (bits 24-31 of offset 0x020)
     auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
@@ -576,7 +551,7 @@ extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 // idt (interrupt descriptor table) init
-auto init_idt() -> void {
+auto inline init_idt() -> void {
     // 16-byte descriptor format for x86-64
     struct [[gnu::packed]] IDTEntry {
         u16 low;
@@ -748,7 +723,7 @@ auto delay_us(u64 us) -> void {
     }
 }
 
-auto send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
+auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     // select target core via high dword of icr
     apic.local[0x310 / 4] = u32(apic_id) << 24;
 
@@ -799,7 +774,7 @@ extern "C" u8 kernel_asm_run_core_config[];
 
 auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
-auto init_cores() {
+auto inline init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
     auto protected_mode_pml4 = reinterpret_cast<u64*>(0x1'0000);
     auto protected_mode_pdpt = reinterpret_cast<u64*>(0x1'1000);
@@ -829,9 +804,6 @@ auto init_cores() {
         if (cores[i].apic_id == bsp_id) {
             continue;
         }
-
-        // visual: bsp is starting to process core i (yellow)
-        // fill_rect(0, i * 15, 10, 10, 0xffffff00);
 
         // allocate a unique stack for this specific core
         auto stack = allocate_page();
@@ -868,22 +840,14 @@ auto init_cores() {
         // the core sets flag to 1 once it has started
         run_core_started_flag = 0;
 
-        // visual: sipi sent (orange)
-        // fill_rect(10, i * 15, 10, 10, 0xffffa500);
-
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
-
-        // visual: bsp entered wait loop (blue)
-        // fill_rect(20, i * 15, 10, 10, 0x0000ffff);
 
         // wait for core to start
         while (run_core_started_flag == 0) {
             asm volatile("pause");
         }
     }
-
-    // serial_print("all cores running\n");
 }
 
 } // namespace
