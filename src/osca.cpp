@@ -158,22 +158,15 @@ auto on_timer() -> void {
 
     ++tick;
 
-    serial_print(".");
-
-    struct Data {
+    struct Job {
         u32 color;
+        auto run() -> void {
+            draw_rect(0, 0, 32, 32, color);
+            serial_print(".");
+        }
     };
 
-    jobs.add(
-        [](void* data) -> void {
-            for (auto y = 0u; y < 32; ++y) {
-                for (auto x = 0u; x < 32; ++x) {
-                    frame_buffer.pixels[y * frame_buffer.stride + x] =
-                        ptr<Data>(data)->color;
-                }
-            }
-        },
-        Data{tick << 6});
+    jobs.add(Job{tick << 6});
 }
 
 auto on_keyboard(u8 scancode) -> void {

@@ -21,6 +21,8 @@ WARNINGS="-Weverything \
     -Wno-padded \
     -Wno-unused-variable \
     -Wno-unused-function \
+    -Wno-unused-argument \
+    -Wno-unneeded-member-function \
     "
 
 clang++ $FLAGS $CPPFLAGS $WARNINGS \

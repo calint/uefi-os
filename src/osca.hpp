@@ -4,18 +4,35 @@
 
 namespace osca {
 
+template <typename T, typename U>
+concept same_as = __is_same(T, U);
+
+template <typename T>
+concept trivially_copyable = __is_trivially_copyable(T);
+
+template <typename T>
+concept runnable = requires(T t) {
+    { t.run() } -> same_as<void>;
+};
+
+template <typename T>
+concept job = runnable<T> && trivially_copyable<T>;
+
 class Jobs final {
   public:
-    using JobFunc = auto (*)(void*) -> void;
-
     static auto constexpr JOB_QUEUE_SIZE = 256u;
-    static auto constexpr JOB_DATA_SIZE = CACHE_LINE_SIZE - sizeof(JobFunc);
 
   private:
+    using Func = auto (*)(void*) -> void;
+
+    static auto constexpr JOB_DATA_SIZE = CACHE_LINE_SIZE - sizeof(Func);
+
     struct Entry {
-        JobFunc func;
-        u8 data[CACHE_LINE_SIZE - sizeof(JobFunc)];
+        Func func;
+        u8 data[CACHE_LINE_SIZE - sizeof(Func)];
     };
+
+    static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
 
     alignas(CACHE_LINE_SIZE) Entry queue[JOB_QUEUE_SIZE];
     alignas(CACHE_LINE_SIZE) u32 head;
@@ -30,12 +47,12 @@ class Jobs final {
     // called from only 1 thread
     // copies data into the job
     // data size must be less than cache line size - 8 (the function pointer)
-    template <typename T> auto add(JobFunc func, T const& data) -> void {
+    template <job T> auto add(T job) -> void {
         static_assert(sizeof(T) <= JOB_DATA_SIZE);
 
         auto i = head % JOB_QUEUE_SIZE;
-        queue[i].func = func;
-        memcpy(queue[i].data, &data, sizeof(T));
+        queue[i].func = [](void* data) { ptr<T>(data)->run(); };
+        memcpy(queue[i].data, &job, sizeof(T));
         head = head + 1;
     }
 
@@ -51,9 +68,8 @@ class Jobs final {
         }
 
         if (atomic_compare_exchange(&tail, t, t + 1)) {
-            // got job
-            auto& job = queue[t % JOB_QUEUE_SIZE];
-            job.func(job.data);
+            auto& entry = queue[t % JOB_QUEUE_SIZE];
+            entry.func(entry.data);
         }
 
         // some other thread got the job
