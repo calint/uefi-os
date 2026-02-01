@@ -1,5 +1,6 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
+#include "kernel.hpp"
 
 namespace {
 
@@ -86,7 +87,7 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
-Jobs jobs; // note: 0 initialized
+alignas(CACHE_LINE_SIZE) Jobs jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");

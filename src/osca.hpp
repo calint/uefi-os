@@ -28,8 +28,8 @@ class Jobs final {
     static auto constexpr JOB_DATA_SIZE = CACHE_LINE_SIZE - sizeof(Func);
 
     struct Entry {
-        Func func;
         u8 data[CACHE_LINE_SIZE - sizeof(Func)];
+        Func func;
     };
 
     static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
