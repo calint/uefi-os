@@ -56,6 +56,8 @@ struct Heap {
 
 extern Heap heap;
 
+auto constexpr CACHE_LINE_SIZE = 64u;
+
 auto inline outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }

@@ -17,8 +17,11 @@ class JobQueue final {
     };
 
     volatile Entry queue[JOB_QUEUE_LEN];
-    volatile u32 head;
-    volatile u32 tail;
+    alignas(CACHE_LINE_SIZE) volatile u32 head;
+    alignas(CACHE_LINE_SIZE) volatile u32 tail;
+    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(tail)];
+    // note: `head` and `tail` on different cache lines avoiding False Sharing
+    //       padding to make sure `tail` is the only variable on cache line
 
   public:
     // called from only 1 thread
