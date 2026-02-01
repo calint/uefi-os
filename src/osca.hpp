@@ -6,7 +6,7 @@ namespace osca {
 
 auto constexpr JOB_QUEUE_LEN = 256u;
 
-class JobQueue final {
+class Jobs final {
   public:
     using Job = auto (*)(void*) -> void;
 
@@ -55,6 +55,6 @@ class JobQueue final {
     }
 };
 
-extern JobQueue job_queue;
+extern Jobs jobs;
 
 } // namespace osca

@@ -86,7 +86,7 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
-JobQueue job_queue; // note: 0 initialized
+Jobs jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
@@ -144,9 +144,9 @@ JobQueue job_queue; // note: 0 initialized
     color = color == main_color ? alt_color : main_color;
     ++row;
 
-    interrupts_enable();
-
     test_simd_support();
+
+    interrupts_enable();
 
     while (true) {
         asm volatile("hlt");
@@ -156,15 +156,12 @@ JobQueue job_queue; // note: 0 initialized
 auto on_timer() -> void {
     auto static tick = 0u;
 
+    ++tick;
+
     serial_print(".");
 
-    job_queue.add(
+    jobs.add(
         [](void*) -> void {
-            // serial_print("run: ");
-            // serial_print_dec(tick);
-            // serial_print("\n");
-
-            ++tick;
             for (auto y = 0u; y < 32; ++y) {
                 for (auto x = 0u; x < 32; ++x) {
                     frame_buffer.pixels[y * frame_buffer.stride + x] = tick
@@ -206,7 +203,7 @@ auto on_keyboard(u8 scancode) -> void {
 
 [[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
     while (true) {
-        if (!job_queue.run_next()) {
+        if (!jobs.run_next()) {
             // queue was for sure empty
             asm volatile("pause");
         }

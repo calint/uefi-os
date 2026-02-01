@@ -141,6 +141,14 @@ auto inline atomic_compare_exchange(u32 volatile* target, u32 expected,
     return success;
 }
 
+template <typename T> auto inline ptr(void* p) -> T* {
+    return reinterpret_cast<T*>(p);
+}
+
+template <typename T> auto inline ptr(void const* p) -> T const* {
+    return reinterpret_cast<T const*>(p);
+}
+
 auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 [[noreturn]] auto kernel_start() -> void;
