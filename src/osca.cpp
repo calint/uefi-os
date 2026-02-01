@@ -82,57 +82,67 @@ auto test_simd_support() -> void {
     draw_rect(600u, 400u, 20u, 20u, colr);
 }
 
-struct Job {
-    void (*work)(void*);
-    void* data;
-};
-
-auto constexpr JOB_QUEUE_LEN = 256;
-volatile Job job_queue[JOB_QUEUE_LEN];
-u32 volatile job_head = 0;
-u32 volatile job_tail = 0;
-
 } // namespace
 
 namespace osca {
 
-[[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
-    // interrupts_enable();
+auto constexpr JOB_QUEUE_LEN = 256u;
 
-    while (true) {
-        auto t = job_tail;
-        auto h = job_head;
-        // check if queue is empty
-        if (t == h) {
-            // friendly spin-loop hint to cpu
-            asm volatile("pause");
-            continue;
+class JobQueue final {
+  public:
+    using Job = auto (*)(void*) -> void;
+
+  private:
+    struct Entry {
+        Job job;
+        void* data;
+    };
+
+    volatile Entry queue[JOB_QUEUE_LEN];
+    volatile u32 head;
+    volatile u32 tail;
+
+  public:
+    // called from only 1 thread
+    auto add(Job job, void* data) -> void {
+        auto i = head % JOB_QUEUE_LEN;
+        queue[i].job = job;
+        queue[i].data = data;
+        head = head + 1;
+    }
+
+    // called from multiple threads
+    // returns:
+    //   true if queue was not empty (even if compare and exchange failed)
+    //   false if queue was empty for sure
+    auto run_next() -> bool {
+        auto t = tail;
+        if (t == head) {
+            // is empty
+            return false;
         }
 
-        // attempt to claim the job at current_tail
-        if (atomic_compare_exchange(&job_tail, t, t + 1)) {
-            serial_print("core: ");
-            serial_print_dec(core_id);
-            // serial_print(" head: ");
-            // serial_print_dec(h);
-            // serial_print(" tail: ");
-            // serial_print_dec(t);
-            serial_print("\n");
-            auto& job = job_queue[t % JOB_QUEUE_LEN];
-            if (job.work != nullptr) {
-                job.work(job.data);
-                job.work = nullptr;
-            }
+        if (atomic_compare_exchange(&tail, t, t + 1)) {
+            // got job
+            auto& job = queue[t % JOB_QUEUE_LEN];
+            job.job(job.data);
+        }
+
+        // some other thread got the job
+        // queue was not empty for sure
+        return true;
+    }
+};
+
+extern JobQueue job_queue;
+JobQueue job_queue; // note: 0 initialized
+
+[[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
+    while (true) {
+        if (!job_queue.run_next()) {
+            asm volatile("pause");
         }
     }
-}
-
-auto add_job(void (*work)(void*), void* data) -> void {
-    // serial_print("add job\n");
-    auto index = job_head % JOB_QUEUE_LEN;
-    job_queue[index].work = work;
-    job_queue[index].data = data;
-    job_head = job_head + 1;
 }
 
 [[noreturn]] auto start() -> void {
@@ -205,7 +215,7 @@ auto on_timer() -> void {
 
     serial_print(".");
 
-    add_job(
+    job_queue.add(
         [](void*) -> void {
             // serial_print("run: ");
             // serial_print_dec(tick);
