@@ -4,31 +4,38 @@
 
 namespace osca {
 
-auto constexpr JOB_QUEUE_LEN = 256u;
-
 class Jobs final {
   public:
-    using Job = auto (*)(void*) -> void;
+    using JobFunc = auto (*)(void*) -> void;
+
+    static auto constexpr JOB_QUEUE_SIZE = 256u;
+    static auto constexpr JOB_DATA_SIZE = CACHE_LINE_SIZE - sizeof(JobFunc);
 
   private:
     struct Entry {
-        Job job;
-        void* data;
+        JobFunc func;
+        u8 data[CACHE_LINE_SIZE - sizeof(JobFunc)];
     };
 
-    volatile Entry queue[JOB_QUEUE_LEN];
-    alignas(CACHE_LINE_SIZE) volatile u32 head;
-    alignas(CACHE_LINE_SIZE) volatile u32 tail;
+    alignas(CACHE_LINE_SIZE) Entry queue[JOB_QUEUE_SIZE];
+    alignas(CACHE_LINE_SIZE) u32 head;
+    alignas(CACHE_LINE_SIZE) u32 tail;
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(tail)];
-    // note: `head` and `tail` on different cache lines avoiding False Sharing
+
+    // note: a job is one cache line in size and aligned on cache lines
+    //       `head` and `tail` on different cache lines avoiding False Sharing
     //       padding to make sure `tail` is the only variable on cache line
 
   public:
     // called from only 1 thread
-    auto add(Job job, void* data) -> void {
-        auto i = head % JOB_QUEUE_LEN;
-        queue[i].job = job;
-        queue[i].data = data;
+    // copies data into the job
+    // data size must be less than cache line size - 8 (the function pointer)
+    template <typename T> auto add(JobFunc func, T const& data) -> void {
+        static_assert(sizeof(T) <= JOB_DATA_SIZE);
+
+        auto i = head % JOB_QUEUE_SIZE;
+        queue[i].func = func;
+        memcpy(queue[i].data, &data, sizeof(T));
         head = head + 1;
     }
 
@@ -45,8 +52,8 @@ class Jobs final {
 
         if (atomic_compare_exchange(&tail, t, t + 1)) {
             // got job
-            auto& job = queue[t % JOB_QUEUE_LEN];
-            job.job(job.data);
+            auto& job = queue[t % JOB_QUEUE_SIZE];
+            job.func(job.data);
         }
 
         // some other thread got the job
