@@ -79,7 +79,7 @@ class Jobs final {
 
     // single producer only
     // blocks while queue is full
-    template <is_job T> auto add(T job) -> void {
+    template <is_job T> auto inline add(T job) -> void {
         while (!try_add(job)) {
             asm volatile("pause");
         }
