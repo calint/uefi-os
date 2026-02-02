@@ -141,6 +141,13 @@ auto inline atomic_compare_exchange(u32 volatile* target, u32 expected,
     return success;
 }
 
+auto inline atomic_add(u32 volatile* target, i32 delta) -> void {
+    asm volatile("lock addl %[delta], %[dest]"
+                 : [dest] "+m"(*target)
+                 : [delta] "er"(delta)
+                 : "memory");
+}
+
 template <typename T> auto inline ptr(void* p) -> T* {
     return reinterpret_cast<T*>(p);
 }
