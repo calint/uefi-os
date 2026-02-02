@@ -18,6 +18,7 @@
 * no broken firmware tolerance
 * real-time system with all memory allocated up-front
 * program assumed correct and exceptions should reboot
+* hardware assumed have more than 1 thread
 
 ## coding convention (opinionated)
 
@@ -29,6 +30,7 @@
 * use prefix increments
 * although anything that can be `const` should be declared as such, it
   introduces "noise", sparsely used
+* private class members suffixed with `_`
 
 ## repository
 
