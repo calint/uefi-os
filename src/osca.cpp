@@ -188,7 +188,8 @@ auto on_keyboard(u8 scancode) -> void {
         }
     };
 
-    jobs.add(Job{kbd_intr_total, scancode});
+    jobs.try_add(Job{kbd_intr_total, scancode});
+    // note: return ignored, if queue full drop input
 }
 
 [[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {

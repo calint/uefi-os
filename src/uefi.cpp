@@ -1,5 +1,6 @@
 #include <efi.h>
 
+#include "efierr.h"
 #include "kernel.hpp"
 
 namespace {
@@ -192,7 +193,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 // i/o apic: physical mmio address and gsi range for an external
                 // interrupt controller
                 case 1: {
-                    if (io_apic_count >= sizeof(io_apics)) {
+                    if (io_apic_count >= MAX_IO_APICS) {
                         console_print(sys,
                                       u"abort: more IOAPICs than configured");
                         return EFI_ABORTED;
@@ -280,13 +281,17 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     auto descriptor_size = UINTN(0);
     auto descriptor_ver = UINT32(0);
 
+    // calculate how many bytes needed to store the system memory map
     bs->GetMemoryMap(&size, nullptr, &key, &descriptor_size, &descriptor_ver);
 
+    // allocate an extra page in case memory map increases
+    auto map_capacity = size + 4096;
+
+    // allocate the memory
     EFI_MEMORY_DESCRIPTOR* map = nullptr;
     if (bs->AllocatePages(
-            AllocateAnyPages, EfiLoaderData, EFI_SIZE_TO_PAGES(size + 4096),
+            AllocateAnyPages, EfiLoaderData, EFI_SIZE_TO_PAGES(map_capacity),
             reinterpret_cast<EFI_PHYSICAL_ADDRESS*>(&map)) != EFI_SUCCESS) {
-        // note: +4096 add a full page of padding for fragmented maps
         console_print(sys, u"abort: could not allocate pages\n");
         return EFI_ABORTED;
     }
@@ -294,6 +299,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // multiple attempts because interrupts etc may change the memory map
     // between GetMemoryMap and ExitBootServices
     for (auto i = 0u; i < 16; ++i) {
+        size = map_capacity;
         if (bs->GetMemoryMap(&size, map, &key, &descriptor_size,
                              &descriptor_ver) == EFI_SUCCESS) {
 
@@ -309,6 +315,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
 
     console_print(sys, u"abort: 16 attempts of clean exit failed");
+
+    // free the allocated pages
+    bs->FreePages(EFI_PHYSICAL_ADDRESS(map), EFI_SIZE_TO_PAGES(map_capacity));
 
     return EFI_ABORTED;
 }
