@@ -519,7 +519,7 @@ auto inline init_keyboard() -> void {
             serial_print("  controller timeout\n");
             return;
         }
-        asm volatile("pause");
+        pause();
     }
 
     // send command 0xf4: enable scanning
@@ -537,7 +537,7 @@ auto inline init_keyboard() -> void {
                 break;
             }
         }
-        asm volatile("pause");
+        pause();
     }
 
     if (!ack_received) {
@@ -676,7 +676,7 @@ extern "C" volatile u8 run_core_started_flag = 0;
 
 auto inline delay_cycles(u64 cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
-        asm volatile("pause" ::: "memory");
+        pause();
     }
 }
 
@@ -713,7 +713,7 @@ auto delay_us(u64 us) -> void {
         // poll bit 5 of port 0x61
         // this bit goes high when the pit counter hits zero
         while (!(inb(0x61) & 0x20)) {
-            asm volatile("pause");
+            pause();
         }
 
         // stop the gate and decrement our total tick count.
@@ -731,7 +731,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait until the delivery status bit clears
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        asm volatile("pause");
+        pause();
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
@@ -748,7 +748,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait for delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        asm volatile("pause");
+        pause();
     }
 
     // 200us delay before retry (intel requirement)
@@ -762,7 +762,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // final delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        asm volatile("pause");
+        pause();
     }
 }
 
@@ -843,8 +843,9 @@ auto inline init_cores() {
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // wait for core to start
+        // TODO: atomic load?
         while (run_core_started_flag == 0) {
-            asm volatile("pause");
+            pause();
         }
     }
 }

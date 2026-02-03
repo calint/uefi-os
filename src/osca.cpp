@@ -196,7 +196,7 @@ auto on_keyboard(u8 scancode) -> void {
     while (true) {
         if (!jobs.run_next()) {
             // queue was for sure empty
-            asm volatile("pause");
+            pause();
         }
     }
 }

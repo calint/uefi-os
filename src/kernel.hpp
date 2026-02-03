@@ -127,26 +127,35 @@ auto inline serial_print_hex_byte(u8 val) -> void {
     }
 }
 
-auto inline atomic_compare_exchange(u32 volatile* target, u32 expected,
-                                    u32 desired) -> bool {
-    bool success;
-    asm volatile(
-        "lock cmpxchgl %[src], %[dest]"
-        : "=@ccz"(success),     // out: read zero flag directly (zf=1 success)
-          [dest] "+m"(*target), // out: memory location
-          "+a"(expected)        // in/out: eax register
-        : [src] "r"(desired)    // in: value to write
-        : "memory"              // clobbers
+auto inline atomic_compare_exchange(u32* target, u32& expected, u32 desired)
+    -> bool {
+    return __atomic_compare_exchange_n(
+        target,           // Pointer to the object to modify
+        &expected,        // Pointer to the value we expect to find
+        desired,          // The value we want to write if expected matches
+        false,            // 'weak' = false (use strong version/LOCK prefix)
+        __ATOMIC_SEQ_CST, // Success memory order
+        __ATOMIC_SEQ_CST  // Failure memory order
     );
-    return success;
 }
 
-auto inline atomic_add(u32 volatile* target, i32 delta) -> void {
-    asm volatile("lock addl %[delta], %[dest]"
-                 : [dest] "+m"(*target)
-                 : [delta] "er"(delta)
-                 : "memory");
+auto inline atomic_add(i32* target, i32 delta) -> void {
+    __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
 }
+
+auto inline atomic_load_acquire(u32 const* target) -> u32 {
+    return __atomic_load_n(target, __ATOMIC_ACQUIRE);
+}
+
+auto inline atomic_load_relaxed(u32 const* target) -> u32 {
+    return __atomic_load_n(target, __ATOMIC_RELAXED);
+}
+
+auto inline atomic_store_release(u32* target, u32 val) -> void {
+    __atomic_store_n(target, val, __ATOMIC_RELEASE);
+}
+
+auto inline pause() -> void { __builtin_ia32_pause(); }
 
 template <typename T> auto inline ptr(void* p) -> T* {
     return reinterpret_cast<T*>(p);

@@ -58,21 +58,21 @@ class Jobs final {
     template <is_job T> auto try_add(T job) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
-        // if queue is full wait
-        if (head_ - tail_ >= QUEUE_SIZE) {
+        // `head_` is local to this core, but `tail_` is not
+        auto h = head_;
+        auto t = atomic_load_acquire(&tail_);
+
+        // if queue is full return false
+        if (h - t >= QUEUE_SIZE) {
             return false;
         }
 
-        auto i = head_ % QUEUE_SIZE;
+        auto i = h % QUEUE_SIZE;
         queue_[i].func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(queue_[i].data, &job, sizeof(T));
 
-        // * tell compiler: "finish all previous writes before moving on"
-        // * making sure job data is written before head is increased
-        // * x86_64 ensures that store-store is not reordered
-        asm volatile("" ::: "memory");
-
-        head_ += 1;
+        // publish new head
+        atomic_store_release(&head_, h + 1);
 
         return true;
     }
@@ -81,45 +81,47 @@ class Jobs final {
     // blocks while queue is full
     template <is_job T> auto inline add(T job) -> void {
         while (!try_add(job)) {
-            asm volatile("pause");
+            pause();
         }
     }
 
     // multiple consumers
     // returns:
     //   true if queue was not empty (even if compare and exchange failed)
-    //   false if queue was empty for sure
+    //   false if queue was for sure empty
     auto run_next() -> bool {
-        auto t = tail_;
-
-        // load-load ordering is guaranteed on x86
-        if (t == head_) {
+        auto t = atomic_load_relaxed(&tail_);
+        if (t == atomic_load_acquire(&head_)) {
             // is empty
             return false;
         }
 
         // claim slot using locked RMW
         if (atomic_compare_exchange(&tail_, t, t + 1)) {
-            atomic_add(&active_, 1);
+            // BUG: entry might be overwritten by producer since it is now free
+            atomic_add(ptr<i32>(&active_), 1);
             auto& entry = queue_[t % QUEUE_SIZE];
             entry.func(entry.data);
-            atomic_add(&active_, -1);
+            atomic_add(ptr<i32>(&active_), -1);
         }
 
         // some other thread got the job
-        // queue was not empty for sure
+        // queue was not for sure empty
         return true;
     }
 
-    auto active_count() const -> u32 { return active_; }
+    auto active_count() const -> u32 { return atomic_load_relaxed(&active_); }
 
-    // Spin until all work is finished
+    // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            if (head_ == tail_ && active_ == 0) {
+            auto h = atomic_load_acquire(&head_);
+            auto t = atomic_load_acquire(&tail_);
+            auto a = atomic_load_acquire(&active_);
+            if (h == t && a == 0) {
                 break;
             }
-            asm volatile("pause" ::: "memory");
+            pause();
         }
     }
 };
