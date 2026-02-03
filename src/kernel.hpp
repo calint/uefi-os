@@ -145,7 +145,7 @@ auto inline atomic_add(i32* target, i32 delta) -> void {
 }
 
 auto inline atomic_add_relaxed(i32* target, i32 delta) -> void {
-    __atomic_fetch_add(target, delta, __ATOMIC_ACQ_REL);
+    __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
 
 auto inline atomic_load_acquire(u32 const* target) -> u32 {

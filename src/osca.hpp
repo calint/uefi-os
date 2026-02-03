@@ -63,11 +63,10 @@ class Jobs final {
     // returns:
     //   true if job placed in queue
     //   false if queue wos full
-    // data size must not be greater than 56 bytes (cache line size - func ptr)
     template <is_job T> auto try_add(T job) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
-        auto h = head_; // local to this thread
+        auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
 
         if (atomic_load_acquire(&entry.sequence) != h) {
@@ -82,7 +81,7 @@ class Jobs final {
         // hand over the slot to be run
         atomic_store_release(&entry.sequence, h + 1);
 
-        atomic_store_relaxed(&head_, h + 1);
+        atomic_store_release(&head_, h + 1);
 
         return true;
     }
@@ -125,7 +124,7 @@ class Jobs final {
                 // hand the slot back to the producer for the next lap
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
 
-                atomic_add(ptr<i32>(&active_), -1);
+                atomic_add_relaxed(ptr<i32>(&active_), -1);
                 return true;
             }
         }
@@ -136,9 +135,9 @@ class Jobs final {
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            auto h = atomic_load_acquire(&head_);
-            auto t = atomic_load_acquire(&tail_);
             auto a = atomic_load_acquire(&active_);
+            auto t = atomic_load_acquire(&tail_);
+            auto h = atomic_load_acquire(&head_);
             if (h == t && a == 0) {
                 break;
             }
