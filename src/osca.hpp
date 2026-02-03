@@ -70,13 +70,17 @@ class Jobs final {
         auto h = head_; // local to this thread
         auto& entry = queue_[h % QUEUE_SIZE];
         if (atomic_load_acquire(&entry.sequence) != h) {
-            // job is still running from previous lap
+            // slot is not free from the previous lap
             return false;
         }
+
+        // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
-        // mark entry as busy using sequence != head_
+
+        // hand over the slot to be run
         atomic_store_release(&entry.sequence, h + 1);
+
         atomic_store_relaxed(&head_, h + 1);
         return true;
     }
@@ -92,13 +96,14 @@ class Jobs final {
     // multiple consumers
     // returns:
     //   true if job was run
-    //   false if queue was empty or next job not complete
+    //   false if queue was empty or next job is not ready
     auto run_next() -> bool {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
             auto h = atomic_load_acquire(&head_);
 
             if (t == h) {
+                // queue is empty
                 return false;
             }
 
@@ -106,13 +111,18 @@ class Jobs final {
             auto seq = atomic_load_acquire(&entry.sequence);
 
             if (seq != t + 1) {
+                // slot is not ready to run
                 return false;
             }
 
             if (atomic_compare_exchange(&tail_, t, t + 1)) {
                 atomic_add_relaxed(ptr<i32>(&active_), 1);
+
                 entry.func(entry.data);
+
+                // hand the slot back to the producer for the next lap
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
+
                 atomic_add(ptr<i32>(&active_), -1);
                 return true;
             }
