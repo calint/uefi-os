@@ -99,10 +99,11 @@ class Jobs final {
         // claim slot using locked RMW
         if (atomic_compare_exchange(&tail_, t, t + 1)) {
             // BUG: entry might be overwritten by producer since it is now free
-            atomic_add(ptr<i32>(&active_), 1);
+
+            atomic_add_relaxed(ptr<i32>(&active_), 1);
             auto& entry = queue_[t % QUEUE_SIZE];
             entry.func(entry.data);
-            atomic_add(ptr<i32>(&active_), -1);
+            atomic_add_relaxed(ptr<i32>(&active_), -1);
         }
 
         // some other thread got the job

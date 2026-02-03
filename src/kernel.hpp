@@ -70,8 +70,9 @@ auto inline inb(u16 port) -> u8 {
 }
 
 extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
+    void* original_s = s;
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
-    return s;
+    return original_s;
 }
 
 extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
@@ -141,6 +142,10 @@ auto inline atomic_compare_exchange(u32* target, u32& expected, u32 desired)
 
 auto inline atomic_add(i32* target, i32 delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
+}
+
+auto inline atomic_add_relaxed(i32* target, i32 delta) -> void {
+    __atomic_fetch_add(target, delta, __ATOMIC_ACQ_REL);
 }
 
 auto inline atomic_load_acquire(u32 const* target) -> u32 {
