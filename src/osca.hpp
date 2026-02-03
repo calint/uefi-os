@@ -18,7 +18,7 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 class Jobs final {
     using Func = auto (*)(void*) -> void;
 
-    static auto constexpr QUEUE_SIZE = 256u; // power of 2
+    static auto constexpr QUEUE_SIZE = 1024u; // power of 2
     static auto constexpr JOB_SIZE = CACHE_LINE_SIZE - sizeof(Func);
 
     struct Entry {
@@ -86,6 +86,11 @@ class Jobs final {
     }
 
     // multiple consumers
+    // IMPORTANT: the tail advances making the slot "free" while job is running
+    //            if head rolls over and catches up to tail while job is still
+    //            running then it overwrites entry, causing undefined behavior
+    // MITIGATION: between 2 `wait_idle` cycles do not add more jobs than queue
+    //             size
     // returns:
     //   true if queue was not empty (even if compare and exchange failed)
     //   false if queue was for sure empty
@@ -98,8 +103,6 @@ class Jobs final {
 
         // claim slot using locked RMW
         if (atomic_compare_exchange(&tail_, t, t + 1)) {
-            // BUG: entry might be overwritten by producer since it is now free
-
             atomic_add_relaxed(ptr<i32>(&active_), 1);
             auto& entry = queue_[t % QUEUE_SIZE];
             entry.func(entry.data);
