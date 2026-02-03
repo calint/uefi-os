@@ -92,6 +92,8 @@ alignas(CACHE_LINE_SIZE) Jobs jobs; // note: 0 initialized
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
 
+    jobs.init();
+
     auto di = frame_buffer.pixels;
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         *di = 0x00000022;

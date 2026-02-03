@@ -18,12 +18,15 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 class Jobs final {
     using Func = auto (*)(void*) -> void;
 
-    static auto constexpr QUEUE_SIZE = 1024u; // power of 2
-    static auto constexpr JOB_SIZE = CACHE_LINE_SIZE - sizeof(Func);
+    static auto constexpr QUEUE_SIZE = 256u; // power of 2
+    static auto constexpr JOB_SIZE =
+        CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
     struct Entry {
-        u8 data[CACHE_LINE_SIZE - sizeof(Func)];
+        u8 data[JOB_SIZE];
         Func func;
+        u32 sequence;
+        u32 padding;
     };
 
     static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
@@ -49,6 +52,12 @@ class Jobs final {
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(active_)];
 
   public:
+    auto init() -> void {
+        for (auto i = 0u; i < QUEUE_SIZE; ++i) {
+            queue_[i].sequence = i;
+        }
+    }
+
     // single producer only
     // copies data into the job queue
     // returns:
@@ -58,22 +67,16 @@ class Jobs final {
     template <is_job T> auto try_add(T job) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
-        // `head_` is local to this core, but `tail_` is not
-        auto h = head_;
-        auto t = atomic_load_acquire(&tail_);
-
-        // if queue is full return false
-        if (h - t >= QUEUE_SIZE) {
+        auto h = head_; // local to this thread
+        auto& entry = queue_[h % QUEUE_SIZE];
+        if (atomic_load_acquire(&entry.sequence) != h) {
+            // job is still running from previous lap
             return false;
         }
-
-        auto i = h % QUEUE_SIZE;
-        queue_[i].func = [](void* data) { ptr<T>(data)->run(); };
-        memcpy(queue_[i].data, &job, sizeof(T));
-
-        // publish new head
-        atomic_store_release(&head_, h + 1);
-
+        entry.func = [](void* data) { ptr<T>(data)->run(); };
+        memcpy(entry.data, &job, sizeof(T));
+        atomic_store_release(&entry.sequence, h + 1);
+        head_ = h + 1;
         return true;
     }
 
@@ -86,31 +89,22 @@ class Jobs final {
     }
 
     // multiple consumers
-    // IMPORTANT: the tail advances making the slot "free" while job is running
-    //            if head rolls over and catches up to tail while job is still
-    //            running then it overwrites entry, causing undefined behavior
-    // MITIGATION: between 2 `wait_idle` cycles do not add more jobs than queue
-    //             size
     // returns:
     //   true if queue was not empty (even if compare and exchange failed)
     //   false if queue was for sure empty
     auto run_next() -> bool {
         auto t = atomic_load_relaxed(&tail_);
-        if (t == atomic_load_acquire(&head_)) {
-            // is empty
+        auto& entry = queue_[t % QUEUE_SIZE];
+        if (atomic_load_acquire(&entry.sequence) != t + 1) {
             return false;
         }
-
-        // claim slot using locked RMW
         if (atomic_compare_exchange(&tail_, t, t + 1)) {
             atomic_add_relaxed(ptr<i32>(&active_), 1);
-            auto& entry = queue_[t % QUEUE_SIZE];
             entry.func(entry.data);
+            atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
             atomic_add_relaxed(ptr<i32>(&active_), -1);
+            return true;
         }
-
-        // some other thread got the job
-        // queue was not for sure empty
         return true;
     }
 
