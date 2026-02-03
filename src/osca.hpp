@@ -69,6 +69,7 @@ class Jobs final {
 
         auto h = head_; // local to this thread
         auto& entry = queue_[h % QUEUE_SIZE];
+
         if (atomic_load_acquire(&entry.sequence) != h) {
             // slot is not free from the previous lap
             return false;
@@ -82,6 +83,7 @@ class Jobs final {
         atomic_store_release(&entry.sequence, h + 1);
 
         atomic_store_relaxed(&head_, h + 1);
+
         return true;
     }
 
