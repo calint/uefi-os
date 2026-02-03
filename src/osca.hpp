@@ -62,14 +62,14 @@ class Jobs final {
     // copies data into the job queue
     // returns:
     //   true if job placed in queue
-    //   false if queue wos full
+    //   false if queue was full
     template <is_job T> auto try_add(T job) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
         auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
 
-        if (atomic_load_acquire(&entry.sequence) != h) {
+        if (atomic_load_relaxed(&entry.sequence) != h) {
             // slot is not free from the previous lap
             return false;
         }
@@ -81,7 +81,7 @@ class Jobs final {
         // hand over the slot to be run
         atomic_store_release(&entry.sequence, h + 1);
 
-        atomic_store_release(&head_, h + 1);
+        atomic_store_relaxed(&head_, h + 1);
 
         return true;
     }
@@ -101,7 +101,7 @@ class Jobs final {
     auto run_next() -> bool {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
-            auto h = atomic_load_acquire(&head_);
+            auto h = atomic_load_relaxed(&head_);
 
             if (t == h) {
                 // queue is empty
@@ -124,7 +124,7 @@ class Jobs final {
                 // hand the slot back to the producer for the next lap
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
 
-                atomic_add_relaxed(ptr<i32>(&active_), -1);
+                atomic_add_release(ptr<i32>(&active_), -1);
                 return true;
             }
         }
@@ -135,9 +135,12 @@ class Jobs final {
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            auto a = atomic_load_acquire(&active_);
-            auto t = atomic_load_acquire(&tail_);
-            auto h = atomic_load_acquire(&head_);
+            // possible bug: since the operations below are not an atomic
+            //               operation the check might give spurious idle status
+            //               when not true
+            auto h = atomic_load_relaxed(&head_);
+            auto t = atomic_load_relaxed(&tail_);
+            auto a = atomic_load_relaxed(&active_);
             if (h == t && a == 0) {
                 break;
             }

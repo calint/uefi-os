@@ -144,6 +144,10 @@ auto inline atomic_add(i32* target, i32 delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
 }
 
+auto inline atomic_add_release(i32* target, i32 delta) -> void {
+    __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
+}
+
 auto inline atomic_add_relaxed(i32* target, i32 delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
