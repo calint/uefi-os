@@ -650,14 +650,14 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 // In your global scope
-extern "C" volatile u8 run_core_started_flag;
-extern "C" volatile u8 run_core_started_flag = 0;
+extern "C" u32 run_core_started_flag;
+extern "C" u32 run_core_started_flag = 0;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
-    run_core_started_flag = 1;
+    atomic_store_release(&run_core_started_flag, 1u);
 
     init_gdt();
     init_idt();
@@ -837,14 +837,14 @@ auto inline init_cores() {
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
         // the core sets flag to 1 once it has started
+        atomic_store_release(&run_core_started_flag, 0);
         run_core_started_flag = 0;
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // wait for core to start
-        // TODO: atomic load?
-        while (run_core_started_flag == 0) {
+        while (atomic_load_acquire(&run_core_started_flag) == 0) {
             pause();
         }
     }
