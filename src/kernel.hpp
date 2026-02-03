@@ -160,6 +160,10 @@ auto inline atomic_store_release(u32* target, u32 val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELEASE);
 }
 
+auto inline atomic_store_relaxed(u32* target, u32 val) -> void {
+    __atomic_store_n(target, val, __ATOMIC_RELAXED);
+}
+
 auto inline pause() -> void { __builtin_ia32_pause(); }
 
 template <typename T> auto inline ptr(void* p) -> T* {

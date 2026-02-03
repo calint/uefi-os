@@ -75,8 +75,9 @@ class Jobs final {
         }
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
+        // mark entry as busy using sequence != head_
         atomic_store_release(&entry.sequence, h + 1);
-        head_ = h + 1;
+        atomic_store_relaxed(&head_, h + 1);
         return true;
     }
 
@@ -90,22 +91,32 @@ class Jobs final {
 
     // multiple consumers
     // returns:
-    //   true if queue was not empty (even if compare and exchange failed)
-    //   false if queue was for sure empty
+    //   true if job was run
+    //   false if queue was empty or next job not complete
     auto run_next() -> bool {
-        auto t = atomic_load_relaxed(&tail_);
-        auto& entry = queue_[t % QUEUE_SIZE];
-        if (atomic_load_acquire(&entry.sequence) != t + 1) {
-            return false;
+        while (true) {
+            auto t = atomic_load_relaxed(&tail_);
+            auto h = atomic_load_acquire(&head_);
+
+            if (t == h) {
+                return false;
+            }
+
+            auto& entry = queue_[t % QUEUE_SIZE];
+            auto seq = atomic_load_acquire(&entry.sequence);
+
+            if (seq != t + 1) {
+                return false;
+            }
+
+            if (atomic_compare_exchange(&tail_, t, t + 1)) {
+                atomic_add_relaxed(ptr<i32>(&active_), 1);
+                entry.func(entry.data);
+                atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
+                atomic_add(ptr<i32>(&active_), -1);
+                return true;
+            }
         }
-        if (atomic_compare_exchange(&tail_, t, t + 1)) {
-            atomic_add_relaxed(ptr<i32>(&active_), 1);
-            entry.func(entry.data);
-            atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
-            atomic_add_relaxed(ptr<i32>(&active_), -1);
-            return true;
-        }
-        return true;
     }
 
     auto active_count() const -> u32 { return atomic_load_relaxed(&active_); }
