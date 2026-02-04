@@ -85,7 +85,7 @@ class Jobs final {
 
         // increment submitted (high 32 bits)
         // relaxed because only the producer modifies this, and the
-        // release-store below handles the visibility
+        // release-store at (5) handles the visibility
         // (3) paired with acquire (4)
         atomic_add_relaxed(&state_, 1ull << 32);
 
