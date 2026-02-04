@@ -127,9 +127,9 @@ class Jobs final {
             // possible bug: since the operations below are not an atomic
             //               operation the check might give spurious idle status
             //               when not true
+            auto a = atomic_load_acquire(&active_);
             auto h = atomic_load_relaxed(&head_);
             auto t = atomic_load_relaxed(&tail_);
-            auto a = atomic_load_relaxed(&active_);
             if (h == t && a == 0) {
                 break;
             }
