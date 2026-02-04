@@ -130,7 +130,9 @@ class Jobs final {
                 return false;
             }
 
-            if (atomic_compare_exchange(&tail_, t, t + 1)) {
+            // note: `weak` (false) because failure is retried in this loop
+            //       on x86_64 results in same machine instruction
+            if (atomic_compare_exchange(&tail_, t, t + 1, false)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
