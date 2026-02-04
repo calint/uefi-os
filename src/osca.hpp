@@ -18,7 +18,7 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 class Jobs final {
     using Func = auto (*)(void*) -> void;
 
-    static auto constexpr QUEUE_SIZE = 256u; // power of 2
+    static auto constexpr QUEUE_SIZE = 2u; // power of 2
     static auto constexpr JOB_SIZE =
         CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
@@ -56,6 +56,9 @@ class Jobs final {
         for (auto i = 0u; i < QUEUE_SIZE; ++i) {
             queue_[i].sequence = i;
         }
+        head_ = 0;
+        tail_ = 0;
+        active_ = 0;
     }
 
     // single producer only
@@ -68,7 +71,6 @@ class Jobs final {
 
         auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
-
         if (atomic_load_relaxed(&entry.sequence) != h) {
             // slot is not free from the previous lap
             return false;
@@ -77,10 +79,8 @@ class Jobs final {
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
-
         // hand over the slot to be run
         atomic_store_release(&entry.sequence, h + 1);
-
         atomic_store_relaxed(&head_, h + 1);
 
         return true;
@@ -101,29 +101,18 @@ class Jobs final {
     auto run_next() -> bool {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
-            auto h = atomic_load_relaxed(&head_);
-
-            if (t == h) {
-                // queue is empty
-                return false;
-            }
-
             auto& entry = queue_[t % QUEUE_SIZE];
             auto seq = atomic_load_acquire(&entry.sequence);
-
             if (seq != t + 1) {
-                // slot is not ready to run
+                // slot is not ready to run or queue is empty
                 return false;
             }
 
             if (atomic_compare_exchange(&tail_, t, t + 1)) {
                 atomic_add_relaxed(ptr<i32>(&active_), 1);
-
                 entry.func(entry.data);
-
                 // hand the slot back to the producer for the next lap
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
-
                 atomic_add_release(ptr<i32>(&active_), -1);
                 return true;
             }
