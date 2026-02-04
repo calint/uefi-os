@@ -153,7 +153,7 @@ class Jobs final {
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
         auto s = atomic_load_relaxed(&state_);
-        return u32(s >> 32) - u32(s & 0xFFFFFFFF);
+        return u32(s >> 32) - u32(s & 0xffffffff);
     }
 
     // spin until all work is finished
