@@ -130,8 +130,9 @@ auto inline serial_print_hex_byte(u8 val) -> void {
 }
 
 template <typename T>
-auto inline atomic_compare_exchange(T* target, T& expected, T desired,
-                                    bool strong) -> bool {
+auto inline atomic_compare_exchange_acquire_relaxed(T* target, T& expected,
+                                                    T desired, bool strong)
+    -> bool {
     return __atomic_compare_exchange_n(
         target,           // pointer to the object to modify
         &expected,        // pointer to the value we expect to find

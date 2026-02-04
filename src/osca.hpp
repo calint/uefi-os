@@ -123,6 +123,7 @@ class Jobs final {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
             auto& entry = queue_[t % QUEUE_SIZE];
+
             // (6) paired with release (5)
             auto seq = atomic_load_acquire(&entry.sequence);
             if (seq != t + 1) {
@@ -130,9 +131,11 @@ class Jobs final {
                 return false;
             }
 
+            // definitive acquire of job data before execution
             // note: `weak` (false) because failure is retried in this loop
-            //       on x86_64 results in same machine instruction
-            if (atomic_compare_exchange(&tail_, t, t + 1, false)) {
+            // (8) acquires ownership from other consumers
+            if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
+                                                        false)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
