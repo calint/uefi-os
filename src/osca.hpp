@@ -71,7 +71,8 @@ class Jobs final {
 
         auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
-        if (atomic_load_relaxed(&entry.sequence) != h) {
+        // (4) paired with release (3)
+        if (atomic_load_acquire(&entry.sequence) != h) {
             // slot is not free from the previous lap
             return false;
         }
@@ -80,6 +81,7 @@ class Jobs final {
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
         // hand over the slot to be run
+        // (1) paired with acquire (2)
         atomic_store_release(&entry.sequence, h + 1);
         atomic_store_relaxed(&head_, h + 1);
 
@@ -102,6 +104,7 @@ class Jobs final {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
             auto& entry = queue_[t % QUEUE_SIZE];
+            // (2) paired with release (1)
             auto seq = atomic_load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // slot is not ready to run or queue is empty
@@ -112,6 +115,7 @@ class Jobs final {
                 atomic_add_relaxed(ptr<i32>(&active_), 1);
                 entry.func(entry.data);
                 // hand the slot back to the producer for the next lap
+                // (3) paired with acquire (4)
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
                 atomic_add_release(ptr<i32>(&active_), -1);
                 return true;
