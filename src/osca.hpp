@@ -49,13 +49,13 @@ template <u32 QueueSize = 256> class Jobs final {
     // * consumers read only after claiming via tail
     alignas(CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
-    // written by producer, read by consumers
+    // read and written by producer
     alignas(CACHE_LINE_SIZE) u32 head_;
 
     // modified atomically by consumers
     alignas(CACHE_LINE_SIZE) u32 tail_;
 
-    // used in `wait_idle`
+    // used in `wait_idle` and set by producer and consumers
     // high 32 bits: submitted_count
     // low  32 bits: completed_count
     alignas(CACHE_LINE_SIZE) u64 state_;
