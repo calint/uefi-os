@@ -76,8 +76,9 @@ extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
 }
 
 extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
+    void* original_dest = dest;
     asm volatile("rep movsb" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
-    return dest;
+    return original_dest;
 }
 
 auto inline serial_print(char const* s) -> void {

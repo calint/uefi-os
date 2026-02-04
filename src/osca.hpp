@@ -15,7 +15,18 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
     { t.run() } -> is_same<void>;
 };
 
-// single-producer, multi-consumer job queue
+//
+// single-producer, multi-consumer lock-free job queue
+//
+// thread safety:
+//   * try_add(), add(): single producer thread only (bsp)
+//   * run_next(): multiple consumer threads safe
+//   * wait_idle(): safe from producer, blocks until all jobs complete
+//
+// constraints:
+//   * max job parameters size: 48 bytes
+//   * queue capacity: 256 jobs
+//
 class Jobs final {
     using Func = auto (*)(void*) -> void;
 
@@ -27,7 +38,7 @@ class Jobs final {
         u8 data[JOB_SIZE];
         Func func;
         u32 sequence;
-        u32 padding;
+        u32 unused;
     };
 
     static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
@@ -85,10 +96,8 @@ class Jobs final {
         memcpy(entry.data, &job, sizeof(T));
 
         // increment submitted (high 32 bits)
-        // relaxed because only the producer modifies this, and the
-        // release-store at (5) handles the visibility
         // (3) paired with acquire (4)
-        atomic_add_relaxed(&state_, 1ull << 32);
+        atomic_add_release(&state_, 1ull << 32);
 
         // hand over the slot to be run
         // (5) paired with acquire (6)
@@ -129,8 +138,7 @@ class Jobs final {
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
 
                 // increment completed (low 32 bits)
-                // use release to ensure all side effects of entry.func() are
-                // visible to the waiter after they load_acquire the state.
+                // (7) paired with acquire (4)
                 atomic_add_release(&state_, 1ull);
                 return true;
             }
@@ -146,7 +154,7 @@ class Jobs final {
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            // (4) paired with release (3)
+            // (4) paired with release (3) and (7)
             auto snapshot = atomic_load_acquire(&state_);
             auto submitted = u32(snapshot >> 32);
             auto completed = u32(snapshot & 0xffffffff);
