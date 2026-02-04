@@ -27,10 +27,9 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 //   * max job parameters size: 48 bytes
 //   * queue capacity: 256 jobs
 //
-class Jobs final {
+template <u32 QueueSize> class Jobs final {
     using Func = auto (*)(void*) -> void;
 
-    static auto constexpr QUEUE_SIZE = 256u;
     static auto constexpr JOB_SIZE =
         CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
@@ -48,7 +47,7 @@ class Jobs final {
     // job storage:
     // * single producer writes
     // * consumers read only after claiming via tail
-    alignas(CACHE_LINE_SIZE) Entry queue_[QUEUE_SIZE];
+    alignas(CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // written by producer, read by consumers
     alignas(CACHE_LINE_SIZE) u32 head_;
@@ -66,7 +65,7 @@ class Jobs final {
 
   public:
     auto init() -> void {
-        for (auto i = 0u; i < QUEUE_SIZE; ++i) {
+        for (auto i = 0u; i < QueueSize; ++i) {
             queue_[i].sequence = i;
         }
         head_ = 0;
@@ -83,7 +82,7 @@ class Jobs final {
         static_assert(sizeof(T) <= JOB_SIZE);
 
         auto h = atomic_load_relaxed(&head_);
-        auto& entry = queue_[h % QUEUE_SIZE];
+        auto& entry = queue_[h % QueueSize];
 
         // (1) paired with release (2)
         if (atomic_load_acquire(&entry.sequence) != h) {
@@ -122,7 +121,7 @@ class Jobs final {
     auto run_next() -> bool {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
-            auto& entry = queue_[t % QUEUE_SIZE];
+            auto& entry = queue_[t % QueueSize];
 
             // (6) paired with release (5)
             auto seq = atomic_load_acquire(&entry.sequence);
@@ -140,7 +139,7 @@ class Jobs final {
 
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
-                atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
+                atomic_store_release(&entry.sequence, t + QueueSize);
 
                 // increment completed (low 32 bits)
                 // (7) paired with acquire (4)
@@ -171,6 +170,6 @@ class Jobs final {
     }
 };
 
-extern Jobs jobs;
+extern Jobs<256> jobs;
 
 } // namespace osca
