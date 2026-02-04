@@ -15,10 +15,11 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
     { t.run() } -> is_same<void>;
 };
 
+// single-producer, multi-consumer job queue
 class Jobs final {
     using Func = auto (*)(void*) -> void;
 
-    static auto constexpr QUEUE_SIZE = 2u; // power of 2
+    static auto constexpr QUEUE_SIZE = 256u;
     static auto constexpr JOB_SIZE =
         CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
