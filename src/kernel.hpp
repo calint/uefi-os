@@ -131,13 +131,13 @@ auto inline serial_print_hex_byte(u8 val) -> void {
 
 template <typename T>
 auto inline atomic_compare_exchange_acquire_relaxed(T* target, T& expected,
-                                                    T desired, bool strong)
+                                                    T desired, bool weak)
     -> bool {
     return __atomic_compare_exchange_n(
         target,           // pointer to the object to modify
         &expected,        // pointer to the value we expect to find
         desired,          // the value we want to write if expected matches
-        strong,           // 'weak' = false (use strong version/lock prefix)
+        weak,             // 'weak' = false (use strong version/lock prefix)
         __ATOMIC_ACQUIRE, // success memory order
         __ATOMIC_RELAXED  // failure memory order
     );

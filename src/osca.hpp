@@ -134,7 +134,7 @@ template <u32 QueueSize = 256> class Jobs final {
             // note: `weak` (false) because failure is retried in this loop
             // (8) acquires ownership from other consumers
             if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
-                                                        false)) {
+                                                        true)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
