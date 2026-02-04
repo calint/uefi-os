@@ -44,12 +44,12 @@ class Jobs final {
     // modified atomically by consumers
     alignas(CACHE_LINE_SIZE) u32 tail_;
 
-    // number of active running jobs
-    // modified atomically by consumers
-    alignas(CACHE_LINE_SIZE) u32 active_;
+    // used in `wait_idle`
+    // high 32 bits: submitted_count
+    // low  32 bits: completed_count
+    alignas(CACHE_LINE_SIZE) u64 state_;
 
-    // padding to make `active_` the only variable on cache line
-    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(active_)];
+    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(state_)];
 
   public:
     auto init() -> void {
@@ -58,7 +58,7 @@ class Jobs final {
         }
         head_ = 0;
         tail_ = 0;
-        active_ = 0;
+        state_ = 0;
     }
 
     // single producer only
@@ -71,7 +71,7 @@ class Jobs final {
 
         auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
-        // (4) paired with release (3)
+        // (1) paired with release (2)
         if (atomic_load_acquire(&entry.sequence) != h) {
             // slot is not free from the previous lap
             return false;
@@ -80,8 +80,15 @@ class Jobs final {
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
+
+        // increment submitted (high 32 bits)
+        // relaxed because only the producer modifies this, and the
+        // release-store below handles the visibility
+        // (3) paired with acquire (4)
+        atomic_add_relaxed(&state_, 1ull << 32);
+
         // hand over the slot to be run
-        // (1) paired with acquire (2)
+        // (5) paired with acquire (6)
         atomic_store_release(&entry.sequence, h + 1);
         atomic_store_relaxed(&head_, h + 1);
 
@@ -104,7 +111,7 @@ class Jobs final {
         while (true) {
             auto t = atomic_load_relaxed(&tail_);
             auto& entry = queue_[t % QUEUE_SIZE];
-            // (2) paired with release (1)
+            // (6) paired with release (5)
             auto seq = atomic_load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // slot is not ready to run or queue is empty
@@ -112,29 +119,33 @@ class Jobs final {
             }
 
             if (atomic_compare_exchange(&tail_, t, t + 1)) {
-                atomic_add_relaxed(ptr<i32>(&active_), 1);
                 entry.func(entry.data);
+
                 // hand the slot back to the producer for the next lap
-                // (3) paired with acquire (4)
+                // (2) paired with acquire (1)
                 atomic_store_release(&entry.sequence, t + QUEUE_SIZE);
-                atomic_add_release(ptr<i32>(&active_), -1);
+
+                // increment completed (low 32 bits)
+                // use release to ensure all side effects of entry.func() are
+                // visible to the waiter after they load_acquire the state.
+                atomic_add_release(&state_, 1ull);
                 return true;
             }
         }
     }
-
-    auto active_count() const -> u32 { return atomic_load_relaxed(&active_); }
+    auto active_count() const -> u32 {
+        auto s = atomic_load_relaxed(&state_);
+        return static_cast<u32>(s >> 32) - static_cast<u32>(s & 0xFFFFFFFF);
+    }
 
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            // possible bug: since the operations below are not an atomic
-            //               operation the check might give spurious idle status
-            //               when not true
-            auto a = atomic_load_acquire(&active_);
-            auto h = atomic_load_relaxed(&head_);
-            auto t = atomic_load_relaxed(&tail_);
-            if (h == t && a == 0) {
+            // (4) paired with release (3)
+            auto snapshot = atomic_load_acquire(&state_);
+            auto submitted = u32(snapshot >> 32);
+            auto completed = u32(snapshot & 0xffffffff);
+            if (submitted == completed) {
                 break;
             }
             pause();

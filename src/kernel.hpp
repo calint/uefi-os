@@ -128,43 +128,47 @@ auto inline serial_print_hex_byte(u8 val) -> void {
     }
 }
 
-auto inline atomic_compare_exchange(u32* target, u32& expected, u32 desired)
-    -> bool {
+template <typename T>
+auto inline atomic_compare_exchange(T* target, T& expected, T desired) -> bool {
     return __atomic_compare_exchange_n(
-        target,           // Pointer to the object to modify
-        &expected,        // Pointer to the value we expect to find
-        desired,          // The value we want to write if expected matches
-        false,            // 'weak' = false (use strong version/LOCK prefix)
-        __ATOMIC_SEQ_CST, // Success memory order
-        __ATOMIC_SEQ_CST  // Failure memory order
+        target,           // pointer to the object to modify
+        &expected,        // pointer to the value we expect to find
+        desired,          // the value we want to write if expected matches
+        false,            // 'weak' = false (use strong version/lock prefix)
+        __ATOMIC_SEQ_CST, // success memory order
+        __ATOMIC_SEQ_CST  // failure memory order
     );
 }
 
-auto inline atomic_add(i32* target, i32 delta) -> void {
+template <typename T> auto inline atomic_add(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
 }
 
-auto inline atomic_add_release(i32* target, i32 delta) -> void {
+template <typename T>
+auto inline atomic_add_release(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
 }
 
-auto inline atomic_add_relaxed(i32* target, i32 delta) -> void {
+template <typename T>
+auto inline atomic_add_relaxed(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
 
-auto inline atomic_load_acquire(u32 const* target) -> u32 {
+template <typename T> auto inline atomic_load_acquire(T const* target) -> T {
     return __atomic_load_n(target, __ATOMIC_ACQUIRE);
 }
 
-auto inline atomic_load_relaxed(u32 const* target) -> u32 {
+template <typename T> auto inline atomic_load_relaxed(T const* target) -> T {
     return __atomic_load_n(target, __ATOMIC_RELAXED);
 }
 
-auto inline atomic_store_release(u32* target, u32 val) -> void {
+template <typename T>
+auto inline atomic_store_release(T* target, T val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELEASE);
 }
 
-auto inline atomic_store_relaxed(u32* target, u32 val) -> void {
+template <typename T>
+auto inline atomic_store_relaxed(T* target, T val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELAXED);
 }
 
