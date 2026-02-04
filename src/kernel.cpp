@@ -837,14 +837,13 @@ auto inline init_cores() {
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
         // the core sets flag to 1 once it has started
-        atomic_store_release(&run_core_started_flag, u8(0));
         run_core_started_flag = 0;
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // wait for core to start
-        while (atomic_load_acquire(&run_core_started_flag) == 0) {
+        while (run_core_started_flag == 0) {
             pause();
         }
     }
