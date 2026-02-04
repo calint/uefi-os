@@ -49,6 +49,7 @@ class Jobs final {
     // low  32 bits: completed_count
     alignas(CACHE_LINE_SIZE) u64 state_;
 
+    // make sure `state_` is alone on cache line
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(state_)];
 
   public:
@@ -71,6 +72,7 @@ class Jobs final {
 
         auto h = atomic_load_relaxed(&head_);
         auto& entry = queue_[h % QUEUE_SIZE];
+
         // (1) paired with release (2)
         if (atomic_load_acquire(&entry.sequence) != h) {
             // slot is not free from the previous lap
@@ -133,9 +135,11 @@ class Jobs final {
             }
         }
     }
+
+    // intended to be used in status displays etc
     auto active_count() const -> u32 {
         auto s = atomic_load_relaxed(&state_);
-        return static_cast<u32>(s >> 32) - static_cast<u32>(s & 0xFFFFFFFF);
+        return u32(s >> 32) - u32(s & 0xFFFFFFFF);
     }
 
     // spin until all work is finished
