@@ -25,7 +25,7 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 //
 // constraints:
 //   * max job parameters size: 48 bytes
-//   * queue capacity: configurable through template argument
+//   * queue capacity: configurable through template argument (power of 2)
 //
 template <u32 QueueSize = 256> class Jobs final {
     using Func = auto (*)(void*) -> void;
