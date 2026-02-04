@@ -95,7 +95,7 @@ template <u32 QueueSize = 256> class Jobs final {
         memcpy(entry.data, &job, sizeof(T));
 
         // increment submitted (high 32 bits)
-        // (3) paired with acquire (4) and (7)
+        // (3) paired with acquire (4)
         atomic_add_release(&state_, 1ull << 32);
 
         // hand over the slot to be run
