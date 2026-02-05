@@ -66,7 +66,7 @@ template <u32 QueueSize = 256> class Jobs final {
         u64 raw;
     } state_;
 
-    // note: accessing atomic raw and bits through union is:
+    // note: accessing `state_` atomic raw and bits through union is:
     // iso c++ standard  ub      mixed-size overlapping atomics are undefined.
     // x86_64 hardware   defined hardware guarantees cache-line coherence
     // gcc/clang         safe    built-ins handle the aliasing correctly
