@@ -169,7 +169,7 @@ auto on_timer() -> void {
         }
     };
 
-    jobs.add(Job{tick << 6});
+    jobs.add<Job>(tick << 6);
 }
 
 auto on_keyboard(u8 scancode) -> void {
@@ -190,7 +190,7 @@ auto on_keyboard(u8 scancode) -> void {
         }
     };
 
-    jobs.try_add(Job{kbd_intr_total, scancode});
+    jobs.try_add<Job>(kbd_intr_total, scancode);
     // note: return ignored, if queue full drop input
 }
 

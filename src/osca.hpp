@@ -92,11 +92,11 @@ template <u32 QueueSize = 256> class Jobs final {
     }
 
     // single producer only
-    // copies data into the job queue
+    // creates job into the queue
     // returns:
     //   true if job placed in queue
     //   false if queue was full
-    template <is_job T> auto try_add(T job) -> bool {
+    template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
         auto h = atomic_load_relaxed(&head_);
@@ -110,7 +110,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
-        memcpy(entry.data, &job, sizeof(T));
+        *ptr<T>(entry.data) = {args...};
 
         // increment submitted
         // (3) paired with acquire (4)
@@ -126,8 +126,9 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // single producer only
     // blocks while queue is full
-    template <is_job T> auto inline add(T job) -> void {
-        while (!try_add(job)) {
+    template <is_job T, typename... Args>
+    auto inline add(Args&&... args) -> void {
+        while (!try_add<T>(args...)) {
             pause();
         }
     }
