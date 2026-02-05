@@ -70,6 +70,8 @@ template <u32 QueueSize = 256> class Jobs final {
     // iso c++ standard  ub      mixed-size overlapping atomics are undefined.
     // x86_64 hardware   defined hardware guarantees cache-line coherence
     // gcc/clang         safe    built-ins handle the aliasing correctly
+    static_assert(__x86_64__ && __clang__,
+                  "this implementation requires x86_64 and clang");
 
     // make sure `state_` is alone on cache line
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(state_)];
