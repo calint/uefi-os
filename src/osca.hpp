@@ -28,6 +28,10 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 //   * queue capacity: configurable through template argument (power of 2)
 //
 template <u32 QueueSize = 256> class Jobs final {
+    static_assert(
+        (QueueSize & (QueueSize - 1)) == 0 && QueueSize > 1,
+        "QueueSize must be a power of 2 for efficient modulo operations");
+
     using Func = auto (*)(void*) -> void;
 
     static auto constexpr JOB_SIZE =
