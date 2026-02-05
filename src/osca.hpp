@@ -55,10 +55,21 @@ template <u32 QueueSize = 256> class Jobs final {
     // modified atomically by consumers
     alignas(CACHE_LINE_SIZE) u32 tail_;
 
-    // used in `wait_idle` and set by producer and consumers
-    // high 32 bits: submitted_count
-    // low  32 bits: completed_count
-    alignas(CACHE_LINE_SIZE) u64 state_;
+    union State {
+        struct {
+            // increased by consumers
+            u32 completed; // low 32 bits (little endian)
+
+            // increased by producer
+            u32 submitted; // high 32 bits
+        } bits;
+        u64 raw;
+    } state_;
+
+    // note: accessing atomic raw and bits through union is:
+    // iso c++ standard  ub      mixed-size overlapping atomics are undefined.
+    // x86_64 hardware   defined hardware guarantees cache-line coherence
+    // gcc/clang         safe    built-ins handle the aliasing correctly
 
     // make sure `state_` is alone on cache line
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(state_)];
@@ -70,7 +81,7 @@ template <u32 QueueSize = 256> class Jobs final {
         }
         head_ = 0;
         tail_ = 0;
-        state_ = 0;
+        state_.raw = 0;
     }
 
     // single producer only
@@ -96,7 +107,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // increment submitted (high 32 bits)
         // (3) paired with acquire (4)
-        atomic_add_release(&state_, 1ull << 32);
+        atomic_add_release(&state_.bits.submitted, 1u);
 
         // hand over the slot to be run
         // (5) paired with acquire (6)
@@ -131,7 +142,7 @@ template <u32 QueueSize = 256> class Jobs final {
             }
 
             // definitive acquire of job data before execution
-            // note: `weak` (false) because failure is retried in this loop
+            // note: `weak` (true) because failure is retried in this loop
             // (8) acquires ownership from other consumers
             if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
                                                         true)) {
@@ -143,7 +154,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
                 // increment completed (low 32 bits)
                 // (7) paired with acquire (4)
-                atomic_add_release(&state_, 1ull);
+                atomic_add_release(&state_.bits.completed, 1u);
                 return true;
             }
         }
@@ -158,11 +169,10 @@ template <u32 QueueSize = 256> class Jobs final {
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
+            State state;
             // (4) paired with release (3) and (7)
-            auto snapshot = atomic_load_acquire(&state_);
-            auto submitted = u32(snapshot >> 32);
-            auto completed = u32(snapshot & 0xffffffff);
-            if (submitted == completed) {
+            state.raw = atomic_load_acquire(&state_.raw);
+            if (state.submitted == state.completed) {
                 break;
             }
             pause();
