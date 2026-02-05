@@ -112,7 +112,7 @@ template <u32 QueueSize = 256> class Jobs final {
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         memcpy(entry.data, &job, sizeof(T));
 
-        // increment submitted (high 32 bits)
+        // increment submitted
         // (3) paired with acquire (4)
         atomic_add_release(&state_.submitted, 1u);
 
@@ -159,7 +159,7 @@ template <u32 QueueSize = 256> class Jobs final {
                 // (2) paired with acquire (1)
                 atomic_store_release(&entry.sequence, t + QueueSize);
 
-                // increment completed (low 32 bits)
+                // increment completed
                 // (7) paired with acquire (4)
                 atomic_add_release(&state_.completed, 1u);
                 return true;
