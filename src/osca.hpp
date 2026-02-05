@@ -55,7 +55,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // modified atomically by consumers
     alignas(CACHE_LINE_SIZE) u32 tail_;
 
-    union State {
+    alignas(CACHE_LINE_SIZE) union State {
         struct {
             // increased by consumers
             u32 completed; // low 32 bits (little endian)
