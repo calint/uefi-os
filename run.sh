@@ -5,8 +5,9 @@ mkdir -p esp/EFI/BOOT
 
 FLAGS="-std=c++26 -target x86_64-unknown-windows-msvc -Wfatal-errors -Werror"
 ASMFLAGS=""
-CPPFLAGS="-O3 -ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone \
-    -fno-exceptions -fno-rtti"
+CPPFLAGS="-ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone \
+    -fno-exceptions -fno-rtti \
+    -O3 -g -gdwarf"
 WARNINGS="-Weverything \
     -Wno-c++98-compat \
     -Wno-c++98-compat-pedantic \

@@ -16,8 +16,4 @@
     }
     serial_print("\r\n");
 
-objdump -S -C -M intel --visualize-jumps=color kernel.o
--d: Disassemble the executable sections.
--C: Demangle the names automatically so you see MyClass::test() instead of the mangled string.
--M intel: (Optional) Use Intel syntax, which is much easier to read for x86_64 kernel development than the default AT&T syntax.
---visualize-jumps=color: (Newer versions) Adds ASCII art lines to help you follow if statements and loops.
+llvm-objdump -S -C --x86-asm-syntax=intel osca.o
