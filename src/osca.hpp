@@ -62,7 +62,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
             // increased by producer
             u32 submitted; // high 32 bits
-        } bits;
+        };
         u64 raw;
     } state_;
 
@@ -110,7 +110,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // increment submitted (high 32 bits)
         // (3) paired with acquire (4)
-        atomic_add_release(&state_.bits.submitted, 1u);
+        atomic_add_release(&state_.submitted, 1u);
 
         // hand over the slot to be run
         // (5) paired with acquire (6)
@@ -157,7 +157,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
                 // increment completed (low 32 bits)
                 // (7) paired with acquire (4)
-                atomic_add_release(&state_.bits.completed, 1u);
+                atomic_add_release(&state_.completed, 1u);
                 return true;
             }
         }
@@ -165,8 +165,9 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        auto s = atomic_load_relaxed(&state_);
-        return u32(s >> 32) - u32(s & 0xffffffff);
+        State s;
+        s.raw = atomic_load_relaxed(&state_.raw);
+        return s.submitted - s.completed;
     }
 
     // spin until all work is finished

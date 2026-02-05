@@ -17,6 +17,7 @@ WARNINGS="-Weverything \
     -Wno-unsafe-buffer-usage \
     -Wno-missing-prototypes \
     -Wno-language-extension-token \
+    -Wno-gnu-anonymous-struct \
     -Wno-undef \
     -Wno-padded \
     -Wno-unused-variable \
