@@ -19,9 +19,9 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 // single-producer, multi-consumer lock-free job queue
 //
 // thread safety:
-//   * try_add(), add(): single producer thread only (bsp)
+//   * try_add(), add(): single producer thread only
 //   * run_next(): multiple consumer threads safe
-//   * wait_idle(): safe from producer, blocks until all jobs complete
+//   * wait_idle(): safe from producer thread, blocks until all jobs complete
 //
 // constraints:
 //   * max job parameters size: 48 bytes
