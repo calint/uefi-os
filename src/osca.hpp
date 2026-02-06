@@ -99,13 +99,10 @@ template <u32 QueueSize = 256> class Jobs final {
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         *ptr<T>(entry.data) = {args...};
-
-        // increment submitted
-        // (3) paired with acquire (4)
-        atomic_add_release(&submitted_, 1u);
+        ++submitted_;
 
         // hand over the slot to be run
-        // (5) paired with acquire (6)
+        // (3) paired with acquire (4)
         atomic_store_release(&entry.sequence, h + 1);
         atomic_store_relaxed(&head_, h + 1);
 
@@ -130,7 +127,7 @@ template <u32 QueueSize = 256> class Jobs final {
             auto t = atomic_load_relaxed(&tail_);
             auto& entry = queue_[t % QueueSize];
 
-            // (6) paired with release (5)
+            // (4) paired with release (3)
             auto seq = atomic_load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // slot is not ready to run or queue is empty
@@ -139,7 +136,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
-            // (9) acquires ownership from other consumers
+            // (7) acquires ownership from other consumers
             if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
                                                         true)) {
                 entry.func(entry.data);
@@ -149,7 +146,7 @@ template <u32 QueueSize = 256> class Jobs final {
                 atomic_store_release(&entry.sequence, t + QueueSize);
 
                 // increment completed
-                // (7) paired with acquire (8)
+                // (5) paired with acquire (6)
                 atomic_add_release(&completed_, 1u);
                 return true;
             }
@@ -159,8 +156,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return atomic_load_relaxed(&submitted_) -
-               atomic_load_relaxed(&completed_);
+        return submitted_ - atomic_load_relaxed(&completed_);
     }
 
     // called from producer
@@ -168,10 +164,9 @@ template <u32 QueueSize = 256> class Jobs final {
     auto wait_idle() const -> void {
         // note: since this is the producer, `submitted_` won't increase while
         // in this loop
-        // (4) paired with release (3)
-        auto sub = atomic_load_acquire(&submitted_);
+        auto sub = submitted_;
         while (true) {
-            // (8) paired with release (7)
+            // (6) paired with release (5)
             auto com = atomic_load_acquire(&completed_);
             if (sub == com) {
                 break;
