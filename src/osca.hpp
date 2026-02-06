@@ -87,11 +87,10 @@ template <u32 QueueSize = 256> class Jobs final {
     template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE);
 
-        auto h = atomic_load_relaxed(&head_);
-        auto& entry = queue_[h % QueueSize];
+        auto& entry = queue_[head_ % QueueSize];
 
         // (1) paired with release (2)
-        if (atomic_load_acquire(&entry.sequence) != h) {
+        if (atomic_load_acquire(&entry.sequence) != head_) {
             // slot is not free from the previous lap
             return false;
         }
@@ -100,11 +99,11 @@ template <u32 QueueSize = 256> class Jobs final {
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         *ptr<T>(entry.data) = {args...};
         ++submitted_;
+        ++head_;
 
         // hand over the slot to be run
         // (3) paired with acquire (4)
-        atomic_store_release(&entry.sequence, h + 1);
-        atomic_store_relaxed(&head_, h + 1);
+        atomic_store_release(&entry.sequence, head_);
 
         return true;
     }
