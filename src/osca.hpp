@@ -50,7 +50,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // job storage:
     // * single producer writes
-    // * consumers read only after claiming via tail
+    // * multiple consumers read only after claiming via tail
     alignas(CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // read and written by producer
@@ -62,10 +62,10 @@ template <u32 QueueSize = 256> class Jobs final {
     // written by producer
     alignas(CACHE_LINE_SIZE) u32 submitted_;
 
-    // read by producer written by consumer
+    // read by producer written by consumers
     alignas(CACHE_LINE_SIZE) u32 completed_;
 
-    // make sure `state_` is alone on cache line
+    // make sure `completed_` is alone on cache line
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
@@ -79,7 +79,7 @@ template <u32 QueueSize = 256> class Jobs final {
         completed_ = 0;
     }
 
-    // single producer only
+    // called from producer
     // creates job into the queue
     // returns:
     //   true if job placed in queue
@@ -112,7 +112,7 @@ template <u32 QueueSize = 256> class Jobs final {
         return true;
     }
 
-    // single producer only
+    // called from producer
     // blocks while queue is full
     template <is_job T, typename... Args>
     auto inline add(Args&&... args) -> void {
@@ -121,7 +121,7 @@ template <u32 QueueSize = 256> class Jobs final {
         }
     }
 
-    // multiple consumers
+    // called from multiple consumers
     // returns:
     //   true if job was run
     //   false if queue was empty or next job is not ready
@@ -156,14 +156,15 @@ template <u32 QueueSize = 256> class Jobs final {
         }
     }
 
+    // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
         return atomic_load_relaxed(submitted_) -
                atomic_load_relaxed(completed_);
     }
 
-    // spin until all work is finished
     // called from producer
+    // spin until all work is finished
     auto wait_idle() const -> void {
         // note: since this is the producer, `submitted_` won't increase while
         // in this loop
