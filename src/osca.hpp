@@ -159,8 +159,8 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return atomic_load_relaxed(submitted_) -
-               atomic_load_relaxed(completed_);
+        return atomic_load_relaxed(&submitted_) -
+               atomic_load_relaxed(&completed_);
     }
 
     // called from producer
