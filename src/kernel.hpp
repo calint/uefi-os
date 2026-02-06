@@ -10,6 +10,11 @@ using i32 = int;
 using i64 = long long;
 using uptr = u64;
 
+auto constexpr CACHE_LINE_SIZE = 64u;
+// note: almost all modern x86_64 processors (intel and amd)
+
+auto constexpr CORE_STACK_SIZE_PAGES = 2 * 1024 * 1024 / 4096u;
+
 struct FrameBuffer {
     u32* pixels;
     u32 width;
@@ -55,9 +60,6 @@ struct Heap {
 };
 
 extern Heap heap;
-
-auto constexpr CACHE_LINE_SIZE = 64u;
-// note: almost all modern x86_64 processors (intel and amd)
 
 auto inline outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -183,6 +185,10 @@ template <typename T> auto inline ptr(void* p) -> T* {
 
 template <typename T> auto inline ptr(void const* p) -> T const* {
     return reinterpret_cast<T const*>(p);
+}
+
+template <typename T> auto inline ptr(uptr p) -> T* {
+    return reinterpret_cast<T*>(p);
 }
 
 auto inline interrupts_enable() -> void { asm volatile("sti"); }

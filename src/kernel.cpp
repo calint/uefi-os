@@ -198,6 +198,23 @@ auto allocate_page() -> void* {
     return ptr;
 }
 
+// pops zeroed pages
+auto allocate_pages(u64 num_pages) -> void* {
+    auto bytes = num_pages * 4096;
+
+    // ensure heap has at least one 4k page remaining
+    if (heap.size < bytes) {
+        serial_print("error: out of memory when allocating pages\n");
+        panic(0xffff'0000); // red screen: fatal
+    }
+
+    auto p = heap.start;
+    heap.start = ptr<void>(uptr(heap.start) + bytes);
+    heap.size -= bytes;
+    memset(p, 0, bytes);
+    return p;
+}
+
 // page table traversal
 // returns pointer to the next level in paging hierarchy
 // allocates a new zeroed page if the entry is not present
@@ -805,7 +822,7 @@ auto inline init_cores() {
         }
 
         // allocate a unique stack for this specific core
-        auto stack = allocate_page();
+        auto stack = allocate_pages(CORE_STACK_SIZE_PAGES);
         auto stack_top = reinterpret_cast<uptr>(stack) + 4096;
 
         // prepare the trampoline with the target function

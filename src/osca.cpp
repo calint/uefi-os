@@ -142,11 +142,14 @@ alignas(CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     print_hex(col_val, row, color, lapic_id, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
+    print_string(col_lbl, row, color, "heapmem: ", 3);
+    print_hex(col_val, row, color, heap.size, 3);
+    color = color == main_color ? alt_color : main_color;
+    ++row;
     print_string(col_lbl, row, color, "cores: ", 3);
     print_hex(col_val, row, color, core_count, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
-
     test_simd_support();
 
     interrupts_enable();
