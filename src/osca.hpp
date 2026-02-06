@@ -110,8 +110,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // called from producer
     // blocks while queue is full
-    template <is_job T, typename... Args>
-    auto inline add(Args&&... args) -> void {
+    template <is_job T, typename... Args> auto add(Args&&... args) -> void {
         while (!try_add<T>(args...)) {
             pause();
         }
