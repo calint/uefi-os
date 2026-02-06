@@ -59,27 +59,14 @@ template <u32 QueueSize = 256> class Jobs final {
     // modified atomically by consumers
     alignas(CACHE_LINE_SIZE) u32 tail_;
 
-    alignas(CACHE_LINE_SIZE) union State {
-        struct {
-            // incremented by consumers
-            u32 completed;
+    // written by producer
+    alignas(CACHE_LINE_SIZE) u32 submitted_;
 
-            // incremented by producer
-            u32 submitted;
-        };
-        u64 raw;
-    } state_;
-
-    // note: accessing `state_` atomic `raw` and struct members is:
-    // iso c++ standard  ub       mixed-size overlapping atomics are undefined
-    // x86_64 hardware   defined  hardware guarantees cache-line coherence
-    // gcc/clang         safe     built-ins handle the aliasing correctly
-#if !defined(__x86_64__) || !(defined(__GNUC__) || defined(__clang__))
-    static_assert(false, "implementation requires x86_64 and gcc/clang");
-#endif
+    // read by producer written by consumer
+    alignas(CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `state_` is alone on cache line
-    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(state_)];
+    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
     auto init() -> void {
@@ -88,7 +75,8 @@ template <u32 QueueSize = 256> class Jobs final {
         }
         head_ = 0;
         tail_ = 0;
-        state_.raw = 0;
+        submitted_ = 0;
+        completed_ = 0;
     }
 
     // single producer only
@@ -114,7 +102,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // increment submitted
         // (3) paired with acquire (4)
-        atomic_add_release(&state_.submitted, 1u);
+        atomic_add_release(&submitted_, 1u);
 
         // hand over the slot to be run
         // (5) paired with acquire (6)
@@ -151,7 +139,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
-            // (8) acquires ownership from other consumers
+            // (9) acquires ownership from other consumers
             if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
                                                         true)) {
                 entry.func(entry.data);
@@ -161,8 +149,8 @@ template <u32 QueueSize = 256> class Jobs final {
                 atomic_store_release(&entry.sequence, t + QueueSize);
 
                 // increment completed
-                // (7) paired with acquire (4)
-                atomic_add_release(&state_.completed, 1u);
+                // (7) paired with acquire (8)
+                atomic_add_release(&completed_, 1u);
                 return true;
             }
         }
@@ -170,18 +158,21 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        State s;
-        s.raw = atomic_load_relaxed(&state_.raw);
-        return s.submitted - s.completed;
+        return atomic_load_relaxed(submitted_) -
+               atomic_load_relaxed(completed_);
     }
 
     // spin until all work is finished
+    // called from producer
     auto wait_idle() const -> void {
+        // note: since this is the producer, `submitted_` won't increase while
+        // in this loop
+        // (4) paired with release (3)
+        auto sub = atomic_load_acquire(&submitted_);
         while (true) {
-            State state;
-            // (4) paired with release (3) and (7)
-            state.raw = atomic_load_acquire(&state_.raw);
-            if (state.submitted == state.completed) {
+            // (8) paired with release (7)
+            auto com = atomic_load_acquire(&completed_);
+            if (sub == com) {
                 break;
             }
             pause();
