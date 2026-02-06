@@ -162,13 +162,13 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // spin until all work is finished
     auto wait_idle() const -> void {
-        // note: since this is the producer, `submitted_` won't increase while
-        // in this loop
-        auto sub = submitted_;
         while (true) {
+            // note: since this is the producer, `submitted_` won't increase
+            // while in this loop
+
             // (6) paired with release (5)
-            auto com = atomic_load_acquire(&completed_);
-            if (sub == com) {
+            auto completed = atomic_load_acquire(&completed_);
+            if (submitted_ - completed == 0) {
                 break;
             }
             pause();
