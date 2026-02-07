@@ -41,7 +41,7 @@ template <u32 QueueSize = 256> class Jobs final {
         u8 data[JOB_SIZE];
         Func func;
         u32 sequence;
-        u32 unused;
+        [[maybe_unused]] u32 padding;
     };
 
     static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
@@ -122,6 +122,7 @@ template <u32 QueueSize = 256> class Jobs final {
     //   false if queue was empty or next job is not ready
     auto run_next() -> bool {
         while (true) {
+            // optimistic read; job data visible at (4), claimed at (7)
             auto t = atomic_load_relaxed(&tail_);
             auto& entry = queue_[t % QueueSize];
 
