@@ -54,5 +54,3 @@ qemu-system-x86_64 -enable-kvm -m 16G -vga std -serial stdio \
     -smp 4,sockets=1,cores=2,threads=2 \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
     -drive format=raw,file=fat:rw:esp # -full-screen
-
-# sudo qemu-system-x86_64 -m 1G -serial stdio -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd -drive format=raw,file=/dev/sda
