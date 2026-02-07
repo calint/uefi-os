@@ -172,7 +172,8 @@ auto on_timer() -> void {
         }
     };
 
-    jobs.add<Job>(tick << 6);
+    jobs.try_add<Job>(tick << 6);
+    // note: return ignored, if queue full drop input
 }
 
 auto on_keyboard(u8 scancode) -> void {
