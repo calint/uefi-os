@@ -128,9 +128,9 @@ template <u32 QueueSize = 256> class Jobs final {
             auto seq = atomic::load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // note: ABA issue might have happened where a competing thread
-                //       claimed, and completed a job; in use case this is ok
-                //       since the thread will issue a pause and `run_next`
-                //       again
+                //       claimed, and completed a job; in use case this is
+                //       highly unlikely and ok since the core will issue a
+                //       pause and `run_next` again
                 return false;
             }
 
