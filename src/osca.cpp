@@ -1,6 +1,5 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
-#include "kernel.hpp"
 
 namespace {
 
