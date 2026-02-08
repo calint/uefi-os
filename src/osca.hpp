@@ -69,14 +69,15 @@ template <u32 QueueSize = 256> class Jobs final {
     [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
+    // safe to run while threads are running attempting `run_next`
     auto init() -> void {
-        for (auto i = 0u; i < QueueSize; ++i) {
-            queue_[i].sequence = i;
-        }
         head_ = 0;
         tail_ = 0;
         submitted_ = 0;
         completed_ = 0;
+        for (auto i = 0u; i < QueueSize; ++i) {
+            queue_[i].sequence = i;
+        }
     }
 
     // called from producer
