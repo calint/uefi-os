@@ -87,7 +87,7 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
-alignas(CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
+alignas(config::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
     serial_print("osca x64 kernel is running\n");
@@ -152,7 +152,7 @@ alignas(CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     ++row;
     test_simd_support();
 
-    cpu_interrupts_enable();
+    cpu::interrupts_enable();
 
     while (true) {
         asm volatile("hlt");
@@ -202,7 +202,7 @@ auto on_keyboard(u8 scancode) -> void {
     while (true) {
         if (!jobs.run_next()) {
             // queue was for sure empty
-            cpu_pause();
+            cpu::pause();
         }
     }
 }

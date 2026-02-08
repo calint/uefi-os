@@ -1,9 +1,8 @@
 #pragma once
-
+namespace atomic {
 template <typename T>
-auto inline atomic_compare_exchange_acquire_relaxed(T* target, T& expected,
-                                                    T desired, bool weak)
-    -> bool {
+auto inline compare_exchange_acquire_relaxed(T* target, T& expected, T desired,
+                                             bool weak) -> bool {
     return __atomic_compare_exchange_n(
         target,           // pointer to the object to modify
         &expected,        // pointer to the value we expect to find
@@ -14,34 +13,31 @@ auto inline atomic_compare_exchange_acquire_relaxed(T* target, T& expected,
     );
 }
 
-template <typename T> auto inline atomic_add(T* target, T delta) -> void {
+template <typename T> auto inline add(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
 }
 
-template <typename T>
-auto inline atomic_add_release(T* target, T delta) -> void {
+template <typename T> auto inline add_release(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
 }
 
-template <typename T>
-auto inline atomic_add_relaxed(T* target, T delta) -> void {
+template <typename T> auto inline add_relaxed(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
 
-template <typename T> auto inline atomic_load_acquire(T const* target) -> T {
+template <typename T> auto inline load_acquire(T const* target) -> T {
     return __atomic_load_n(target, __ATOMIC_ACQUIRE);
 }
 
-template <typename T> auto inline atomic_load_relaxed(T const* target) -> T {
+template <typename T> auto inline load_relaxed(T const* target) -> T {
     return __atomic_load_n(target, __ATOMIC_RELAXED);
 }
 
-template <typename T>
-auto inline atomic_store_release(T* target, T val) -> void {
+template <typename T> auto inline store_release(T* target, T val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELEASE);
 }
 
-template <typename T>
-auto inline atomic_store_relaxed(T* target, T val) -> void {
+template <typename T> auto inline store_relaxed(T* target, T val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELAXED);
 }
+}; // namespace atomic

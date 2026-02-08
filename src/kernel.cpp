@@ -538,7 +538,7 @@ auto inline init_keyboard() -> void {
             serial_print("  controller timeout\n");
             return;
         }
-        cpu_pause();
+        cpu::pause();
     }
 
     // send command 0xf4: enable scanning
@@ -556,7 +556,7 @@ auto inline init_keyboard() -> void {
                 break;
             }
         }
-        cpu_pause();
+        cpu::pause();
     }
 
     if (!ack_received) {
@@ -695,7 +695,7 @@ extern "C" u8 run_core_started_flag = 0;
 
 auto inline delay_cycles(u64 cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
-        cpu_pause();
+        cpu::pause();
     }
 }
 
@@ -732,7 +732,7 @@ auto delay_us(u64 us) -> void {
         // poll bit 5 of port 0x61
         // this bit goes high when the pit counter hits zero
         while (!(inb(0x61) & 0x20)) {
-            cpu_pause();
+            cpu::pause();
         }
 
         // stop the gate and decrement our total tick count.
@@ -750,7 +750,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait until the delivery status bit clears
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu_pause();
+        cpu::pause();
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
@@ -767,7 +767,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait for delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu_pause();
+        cpu::pause();
     }
 
     // 200us delay before retry (intel requirement)
@@ -781,7 +781,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // final delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu_pause();
+        cpu::pause();
     }
 }
 
@@ -824,7 +824,7 @@ auto inline init_cores() {
         }
 
         // allocate a unique stack for this specific core
-        auto stack = allocate_pages(CORE_STACK_SIZE_PAGES);
+        auto stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
         auto stack_top = reinterpret_cast<uptr>(stack) + 4096;
 
         // prepare the trampoline with the target function
@@ -863,7 +863,7 @@ auto inline init_cores() {
 
         // wait for core to start
         while (run_core_started_flag == 0) {
-            cpu_pause();
+            cpu::pause();
         }
     }
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "atomics.hpp"
+#include "atomic.hpp"
 #include "config.hpp"
 #include "cpu.hpp"
 #include "types.hpp"
@@ -38,7 +38,7 @@ template <u32 QueueSize = 256> class Jobs final {
     using Func = auto (*)(void*) -> void;
 
     static auto constexpr JOB_SIZE =
-        CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
+        config::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
     struct Entry {
         u8 data[JOB_SIZE];
@@ -47,29 +47,29 @@ template <u32 QueueSize = 256> class Jobs final {
         [[maybe_unused]] u32 padding;
     };
 
-    static_assert(sizeof(Entry) == CACHE_LINE_SIZE);
+    static_assert(sizeof(Entry) == config::CACHE_LINE_SIZE);
 
     // note: different cache lines avoiding false sharing
 
     // job storage:
     // * single producer writes
     // * multiple consumers read only after claiming via tail
-    alignas(CACHE_LINE_SIZE) Entry queue_[QueueSize];
+    alignas(config::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // read and written by producer
-    alignas(CACHE_LINE_SIZE) u32 head_;
+    alignas(config::CACHE_LINE_SIZE) u32 head_;
 
     // modified atomically by consumers
-    alignas(CACHE_LINE_SIZE) u32 tail_;
+    alignas(config::CACHE_LINE_SIZE) u32 tail_;
 
     // written by producer
-    alignas(CACHE_LINE_SIZE) u32 submitted_;
+    alignas(config::CACHE_LINE_SIZE) u32 submitted_;
 
     // read by producer written by consumers
-    alignas(CACHE_LINE_SIZE) u32 completed_;
+    alignas(config::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
-    [[maybe_unused]] u8 padding[CACHE_LINE_SIZE - sizeof(completed_)];
+    [[maybe_unused]] u8 padding[config::CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
     // safe to run while threads are running attempting `run_next`
@@ -94,7 +94,7 @@ template <u32 QueueSize = 256> class Jobs final {
         auto& entry = queue_[head_ % QueueSize];
 
         // (1) paired with release (2)
-        if (atomic_load_acquire(&entry.sequence) != head_) {
+        if (atomic::load_acquire(&entry.sequence) != head_) {
             // slot is not free from the previous lap
             return false;
         }
@@ -107,7 +107,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // hand over the slot to be run
         // (3) paired with acquire (4)
-        atomic_store_release(&entry.sequence, head_);
+        atomic::store_release(&entry.sequence, head_);
 
         return true;
     }
@@ -116,7 +116,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // blocks while queue is full
     template <is_job T, typename... Args> auto add(Args&&... args) -> void {
         while (!try_add<T>(args...)) {
-            cpu_pause();
+            cpu::pause();
         }
     }
 
@@ -127,11 +127,11 @@ template <u32 QueueSize = 256> class Jobs final {
     auto run_next() -> bool {
         while (true) {
             // optimistic read; job data visible at (4), claimed at (7)
-            auto t = atomic_load_relaxed(&tail_);
+            auto t = atomic::load_relaxed(&tail_);
             auto& entry = queue_[t % QueueSize];
 
             // (4) paired with release (3)
-            auto seq = atomic_load_acquire(&entry.sequence);
+            auto seq = atomic::load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // slot is not ready to run or queue is empty
                 return false;
@@ -140,17 +140,17 @@ template <u32 QueueSize = 256> class Jobs final {
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
             // (7) atomically claims this job from competing consumers
-            if (atomic_compare_exchange_acquire_relaxed(&tail_, t, t + 1,
-                                                        true)) {
+            if (atomic::compare_exchange_acquire_relaxed(&tail_, t, t + 1,
+                                                         true)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
-                atomic_store_release(&entry.sequence, t + QueueSize);
+                atomic::store_release(&entry.sequence, t + QueueSize);
 
                 // increment completed
                 // (5) paired with acquire (6)
-                atomic_add_release(&completed_, 1u);
+                atomic::add_release(&completed_, 1u);
                 return true;
             }
         }
@@ -159,7 +159,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return submitted_ - atomic_load_relaxed(&completed_);
+        return submitted_ - atomic::load_relaxed(&completed_);
     }
 
     // called from producer
@@ -170,11 +170,11 @@ template <u32 QueueSize = 256> class Jobs final {
             // while in this loop
 
             // (6) paired with release (5)
-            auto completed = atomic_load_acquire(&completed_);
+            auto completed = atomic::load_acquire(&completed_);
             if (submitted_ - completed == 0) {
                 break;
             }
-            cpu_pause();
+            cpu::pause();
         }
     }
 };
