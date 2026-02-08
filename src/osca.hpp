@@ -119,38 +119,38 @@ template <u32 QueueSize = 256> class Jobs final {
     //   true if job was run
     //   false if no job was run
     auto run_next() -> bool {
-        while (true) {
-            // optimistic read; job data visible at (4), claimed at (7)
-            auto t = atomic::load_relaxed(&tail_);
-            auto& entry = queue_[t % QueueSize];
+        // optimistic read; job data visible at (4), claimed at (7)
+        auto t = atomic::load_relaxed(&tail_);
+        auto& entry = queue_[t % QueueSize];
 
-            // (4) paired with release (3)
-            auto seq = atomic::load_acquire(&entry.sequence);
-            if (seq != t + 1) {
-                // note: ABA issue might have happened where a competing thread
-                //       claimed, and completed a job; in use case this is ok
-                //       since the thread will issue a pause and `run_next`
-                //       again
-                return false;
-            }
-
-            // definitive acquire of job data before execution
-            // note: `weak` (true) because failure is retried in this loop
-            // (7) atomically claims this job from competing consumers
-            if (atomic::compare_exchange_acquire_relaxed(&tail_, t, t + 1,
-                                                         true)) {
-                entry.func(entry.data);
-
-                // hand the slot back to the producer for the next lap
-                // (2) paired with acquire (1)
-                atomic::store_release(&entry.sequence, t + QueueSize);
-
-                // increment completed
-                // (5) paired with acquire (6)
-                atomic::add_release(&completed_, 1u);
-                return true;
-            }
+        // (4) paired with release (3)
+        auto seq = atomic::load_acquire(&entry.sequence);
+        if (seq != t + 1) {
+            // note: ABA issue might have happened where a competing thread
+            //       claimed, and completed a job; in use case this is ok
+            //       since the thread will issue a pause and `run_next`
+            //       again
+            return false;
         }
+
+        // definitive acquire of job data before execution
+        // note: `weak` (true) because failure is retried in this loop
+        // (7) atomically claims this job from competing consumers
+        if (atomic::compare_exchange_acquire_relaxed(&tail_, t, t + 1, true)) {
+            entry.func(entry.data);
+
+            // hand the slot back to the producer for the next lap
+            // (2) paired with acquire (1)
+            atomic::store_release(&entry.sequence, t + QueueSize);
+
+            // increment completed
+            // (5) paired with acquire (6)
+            atomic::add_release(&completed_, 1u);
+            return true;
+        }
+
+        // job was taken by competing core
+        return false;
     }
 
     // called from producer
