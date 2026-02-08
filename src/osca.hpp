@@ -1,6 +1,9 @@
 #pragma once
 
-#include "kernel.hpp"
+#include "atomics.hpp"
+#include "config.hpp"
+#include "cpu.hpp"
+#include "types.hpp"
 
 namespace osca {
 
@@ -113,7 +116,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // blocks while queue is full
     template <is_job T, typename... Args> auto add(Args&&... args) -> void {
         while (!try_add<T>(args...)) {
-            pause();
+            cpu_pause();
         }
     }
 
@@ -171,7 +174,7 @@ template <u32 QueueSize = 256> class Jobs final {
             if (submitted_ - completed == 0) {
                 break;
             }
-            pause();
+            cpu_pause();
         }
     }
 };

@@ -1,5 +1,7 @@
 #include <efi.h>
 
+#include "config.hpp"
+#include "cpu.hpp"
 #include "kernel.hpp"
 
 // failure model:
@@ -536,7 +538,7 @@ auto inline init_keyboard() -> void {
             serial_print("  controller timeout\n");
             return;
         }
-        pause();
+        cpu_pause();
     }
 
     // send command 0xf4: enable scanning
@@ -554,7 +556,7 @@ auto inline init_keyboard() -> void {
                 break;
             }
         }
-        pause();
+        cpu_pause();
     }
 
     if (!ack_received) {
@@ -674,7 +676,7 @@ extern "C" u8 run_core_started_flag = 0;
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
-    atomic_store_release(&run_core_started_flag, u8(1));
+    run_core_started_flag = 1;
 
     init_gdt();
     init_idt();
@@ -693,7 +695,7 @@ extern "C" u8 run_core_started_flag = 0;
 
 auto inline delay_cycles(u64 cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
-        pause();
+        cpu_pause();
     }
 }
 
@@ -730,7 +732,7 @@ auto delay_us(u64 us) -> void {
         // poll bit 5 of port 0x61
         // this bit goes high when the pit counter hits zero
         while (!(inb(0x61) & 0x20)) {
-            pause();
+            cpu_pause();
         }
 
         // stop the gate and decrement our total tick count.
@@ -748,7 +750,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait until the delivery status bit clears
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        pause();
+        cpu_pause();
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
@@ -765,7 +767,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait for delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        pause();
+        cpu_pause();
     }
 
     // 200us delay before retry (intel requirement)
@@ -779,7 +781,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // final delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        pause();
+        cpu_pause();
     }
 }
 
@@ -861,7 +863,7 @@ auto inline init_cores() {
 
         // wait for core to start
         while (run_core_started_flag == 0) {
-            pause();
+            cpu_pause();
         }
     }
 }

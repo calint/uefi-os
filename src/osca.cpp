@@ -152,7 +152,7 @@ alignas(CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     ++row;
     test_simd_support();
 
-    interrupts_enable();
+    cpu_interrupts_enable();
 
     while (true) {
         asm volatile("hlt");
@@ -202,7 +202,7 @@ auto on_keyboard(u8 scancode) -> void {
     while (true) {
         if (!jobs.run_next()) {
             // queue was for sure empty
-            pause();
+            cpu_pause();
         }
     }
 }

@@ -1,19 +1,6 @@
 #pragma once
 
-using u8 = unsigned char;
-using u16 = unsigned short;
-using u32 = unsigned int;
-using u64 = unsigned long long;
-using i8 = char;
-using i16 = short;
-using i32 = int;
-using i64 = long long;
-using uptr = u64;
-
-auto constexpr CACHE_LINE_SIZE = 64u;
-// note: almost all modern x86_64 processors (intel and amd)
-
-auto constexpr CORE_STACK_SIZE_PAGES = 2 * 1024 * 1024 / 4096u;
+#include "types.hpp"
 
 struct FrameBuffer {
     u32* pixels;
@@ -130,68 +117,6 @@ auto inline serial_print_hex_byte(u8 val) -> void {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
     }
 }
-
-template <typename T>
-auto inline atomic_compare_exchange_acquire_relaxed(T* target, T& expected,
-                                                    T desired, bool weak)
-    -> bool {
-    return __atomic_compare_exchange_n(
-        target,           // pointer to the object to modify
-        &expected,        // pointer to the value we expect to find
-        desired,          // the value we want to write if expected matches
-        weak,             // 'weak' = false (use strong version/lock prefix)
-        __ATOMIC_ACQUIRE, // success memory order
-        __ATOMIC_RELAXED  // failure memory order
-    );
-}
-
-template <typename T> auto inline atomic_add(T* target, T delta) -> void {
-    __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
-}
-
-template <typename T>
-auto inline atomic_add_release(T* target, T delta) -> void {
-    __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
-}
-
-template <typename T>
-auto inline atomic_add_relaxed(T* target, T delta) -> void {
-    __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
-}
-
-template <typename T> auto inline atomic_load_acquire(T const* target) -> T {
-    return __atomic_load_n(target, __ATOMIC_ACQUIRE);
-}
-
-template <typename T> auto inline atomic_load_relaxed(T const* target) -> T {
-    return __atomic_load_n(target, __ATOMIC_RELAXED);
-}
-
-template <typename T>
-auto inline atomic_store_release(T* target, T val) -> void {
-    __atomic_store_n(target, val, __ATOMIC_RELEASE);
-}
-
-template <typename T>
-auto inline atomic_store_relaxed(T* target, T val) -> void {
-    __atomic_store_n(target, val, __ATOMIC_RELAXED);
-}
-
-auto inline pause() -> void { __builtin_ia32_pause(); }
-
-template <typename T> auto inline ptr(void* p) -> T* {
-    return reinterpret_cast<T*>(p);
-}
-
-template <typename T> auto inline ptr(void const* p) -> T const* {
-    return reinterpret_cast<T const*>(p);
-}
-
-template <typename T> auto inline ptr(uptr p) -> T* {
-    return reinterpret_cast<T*>(p);
-}
-
-auto inline interrupts_enable() -> void { asm volatile("sti"); }
 
 [[noreturn]] auto kernel_start() -> void;
 
