@@ -89,7 +89,7 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
-alignas(config::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
+alignas(cpu::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
     kernel::serial_print("osca x64 kernel is running\n");

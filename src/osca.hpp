@@ -1,7 +1,6 @@
 #pragma once
 
 #include "atomic.hpp"
-#include "config.hpp"
 #include "cpu.hpp"
 #include "types.hpp"
 
@@ -38,7 +37,7 @@ template <u32 QueueSize = 256> class Jobs final {
     using Func = auto (*)(void*) -> void;
 
     static auto constexpr JOB_SIZE =
-        config::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
+        cpu::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
     struct Entry {
         u8 data[JOB_SIZE];
@@ -47,29 +46,29 @@ template <u32 QueueSize = 256> class Jobs final {
         [[maybe_unused]] u32 padding;
     };
 
-    static_assert(sizeof(Entry) == config::CACHE_LINE_SIZE);
+    static_assert(sizeof(Entry) == cpu::CACHE_LINE_SIZE);
 
     // note: different cache lines avoiding false sharing
 
     // job storage:
     // * single producer writes
     // * multiple consumers read only after claiming via tail
-    alignas(config::CACHE_LINE_SIZE) Entry queue_[QueueSize];
+    alignas(cpu::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // read and written by producer
-    alignas(config::CACHE_LINE_SIZE) u32 head_;
+    alignas(cpu::CACHE_LINE_SIZE) u32 head_;
 
     // modified atomically by consumers
-    alignas(config::CACHE_LINE_SIZE) u32 tail_;
+    alignas(cpu::CACHE_LINE_SIZE) u32 tail_;
 
     // written by producer
-    alignas(config::CACHE_LINE_SIZE) u32 submitted_;
+    alignas(cpu::CACHE_LINE_SIZE) u32 submitted_;
 
     // read by producer written by consumers
-    alignas(config::CACHE_LINE_SIZE) u32 completed_;
+    alignas(cpu::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
-    [[maybe_unused]] u8 padding[config::CACHE_LINE_SIZE - sizeof(completed_)];
+    [[maybe_unused]] u8 padding[cpu::CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
     // safe to run while threads are running attempting `run_next`
