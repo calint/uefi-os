@@ -119,9 +119,9 @@ template <u32 QueueSize = 256> class Jobs final {
     //   true if job was run
     //   false if no job was run
     auto run_next() -> bool {
+        // optimistic read; job data visible at (4), claimed at (7)
+        auto t = atomic::load_relaxed(&tail_);
         while (true) {
-            // optimistic read; job data visible at (4), claimed at (7)
-            auto t = atomic::load_relaxed(&tail_);
             auto& entry = queue_[t % QueueSize];
 
             // (4) paired with release (3)
@@ -137,7 +137,7 @@ template <u32 QueueSize = 256> class Jobs final {
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
             // (7) atomically claims this job from competing consumers
-            if (atomic::compare_exchange_acquire_relaxed(&tail_, t, t + 1,
+            if (atomic::compare_exchange_acquire_relaxed(&tail_, &t, t + 1,
                                                          true)) {
                 entry.func(entry.data);
 
@@ -151,7 +151,9 @@ template <u32 QueueSize = 256> class Jobs final {
                 return true;
             }
 
-            // job was taken by competing core, try again without pause
+            // job was taken by competing core or spurious fail happened, try
+            // again without pause
+            // note: `t` is now the value of what `tail_` was at compare
         }
     }
 
