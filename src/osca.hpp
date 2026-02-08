@@ -132,7 +132,7 @@ template <u32 QueueSize = 256> class Jobs final {
             // (4) paired with release (3)
             auto seq = atomic::load_acquire(&entry.sequence);
             if (seq != t + 1) {
-                // note: ABA issue where another thread claimed and finished the
+                // note: ABA issue when another thread claimed and finished the
                 //       job before this thread checks, resulting in spurious
                 //       false
                 // slot is not ready to run or queue is empty
