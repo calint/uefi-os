@@ -69,11 +69,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     }
 
     // store dimensions and address for the kernel's future renderer
-    frame_buffer = {.pixels =
-                        reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
-                    .width = gop->Mode->Info->HorizontalResolution,
-                    .height = gop->Mode->Info->VerticalResolution,
-                    .stride = gop->Mode->Info->PixelsPerScanLine};
+    kernel::frame_buffer = {
+        .pixels = reinterpret_cast<u32*>(gop->Mode->FrameBufferBase),
+        .width = gop->Mode->Info->HorizontalResolution,
+        .height = gop->Mode->Info->VerticalResolution,
+        .stride = gop->Mode->Info->PixelsPerScanLine};
 
     //
     // get keyboard config, io_apic and lapic pointers
@@ -129,9 +129,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find keyboard and get gsi and flags
 
     // default system configuration
-    keyboard_config = {.gsi = 1u, .flags = 0u};
-    apic = {.io = reinterpret_cast<u32 volatile*>(0xfec00000),
-            .local = reinterpret_cast<u32 volatile*>(0xfee00000)};
+    kernel::keyboard_config = {.gsi = 1u, .flags = 0u};
+    kernel::apic = {.io = reinterpret_cast<u32 volatile*>(0xfec00000),
+                    .local = reinterpret_cast<u32 volatile*>(0xfee00000)};
 
     // i/o apics found in the system (most systems < 8)
     struct [[gnu::packed]] MADT_IOAPIC {
@@ -162,7 +162,8 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
             };
             auto madt = reinterpret_cast<MADT*>(header);
 
-            apic.local = reinterpret_cast<u32 volatile*>(madt->lapic_address);
+            kernel::apic.local =
+                reinterpret_cast<u32 volatile*>(madt->lapic_address);
 
             auto curr = madt->entries;
             auto end = ptr_offset<u8>(madt, madt->header.length);
@@ -185,8 +186,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     };
                     auto core = reinterpret_cast<MADT_LAPIC*>(curr);
                     if (core->flags & 0x03) { // if enabled or online capable
-                        cores[core_count] = {.apic_id = core->apic_id};
-                        ++core_count;
+                        kernel::cores[kernel::core_count] = {.apic_id =
+                                                                 core->apic_id};
+                        ++kernel::core_count;
                     }
                     break;
                 }
@@ -220,15 +222,15 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     // check for keyboard irq
                     if (iso->source == 1) {
                         console_print(sys, u"info: found keyboard config\n");
-                        keyboard_config.gsi = iso->gsi;
-                        keyboard_config.flags = 0;
+                        kernel::keyboard_config.gsi = iso->gsi;
+                        kernel::keyboard_config.flags = 0;
                         // polarity: 3 = active low
                         if ((iso->flags & 0x3) == 0x3) {
-                            keyboard_config.flags |= (1 << 13);
+                            kernel::keyboard_config.flags |= (1 << 13);
                         }
                         // trigger: 3 = level
                         if (((iso->flags >> 2) & 0x3) == 0x3) {
-                            keyboard_config.flags |= (1 << 15);
+                            kernel::keyboard_config.flags |= (1 << 15);
                         }
                     }
                     break;
@@ -243,7 +245,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         u64 address;
                     };
                     auto lapic = reinterpret_cast<MADT_LAPIC_Override*>(curr);
-                    apic.local =
+                    kernel::apic.local =
                         reinterpret_cast<u32 volatile*>(lapic->address);
                     break;
                 }
@@ -265,8 +267,9 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // select ioapic with highest gsi_base <= keyboard gsi
     for (auto i = 0u; i < io_apic_count; ++i) {
-        if (keyboard_config.gsi >= io_apics[i].gsi_base) {
-            apic.io = reinterpret_cast<u32 volatile*>(io_apics[i].address);
+        if (kernel::keyboard_config.gsi >= io_apics[i].gsi_base) {
+            kernel::apic.io =
+                reinterpret_cast<u32 volatile*>(io_apics[i].address);
             // note: in a true multi-apic system, check (gsi_base +
             //       max_interrupts)
         }
@@ -304,11 +307,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                              &descriptor_ver) == EFI_SUCCESS) {
 
             if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
-                memory_map = {.buffer = static_cast<void*>(map),
-                              .size = size,
-                              .descriptor_size = descriptor_size,
-                              .descriptor_version = descriptor_ver};
-                kernel_start();
+                kernel::memory_map = {.buffer = static_cast<void*>(map),
+                                      .size = size,
+                                      .descriptor_size = descriptor_size,
+                                      .descriptor_version = descriptor_ver};
+                kernel::start();
                 __builtin_unreachable();
             }
         }

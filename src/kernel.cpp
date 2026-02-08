@@ -13,13 +13,15 @@
 // 0x0'8000 - ?       : start core trampoline code
 // 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
 
-FrameBuffer frame_buffer;
-MemoryMap memory_map;
-KeyboardConfig keyboard_config;
-APIC apic;
-Core cores[256];
-u8 core_count = 0;
-Heap heap;
+using namespace kernel;
+
+FrameBuffer kernel::frame_buffer;
+MemoryMap kernel::memory_map;
+KeyboardConfig kernel::keyboard_config;
+APIC kernel::apic;
+Core kernel::cores[256];
+u8 kernel::core_count = 0;
+Heap kernel::heap;
 
 // required by msvc/clang abi when floating-point arithmetic is used
 extern "C" i32 _fltused;
@@ -870,7 +872,7 @@ auto inline init_cores() {
 
 } // namespace
 
-[[noreturn]] auto kernel_start() -> void {
+[[noreturn]] auto kernel::start() -> void {
     init_serial();
     serial_print("serial initiated\n");
 

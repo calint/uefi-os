@@ -7,14 +7,15 @@ namespace {
 auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
     for (auto i = y; i < y + height; ++i) {
         for (auto j = x; j < x + width; ++j) {
-            frame_buffer.pixels[i * frame_buffer.stride + j] = color;
+            kernel::frame_buffer.pixels[i * kernel::frame_buffer.stride + j] =
+                color;
         }
     }
 }
 
 auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
-    auto fb = frame_buffer.pixels;
-    auto stride = frame_buffer.stride;
+    auto fb = kernel::frame_buffer.pixels;
+    auto stride = kernel::frame_buffer.stride;
     if (c < 32 || c > 126) {
         c = '?';
     }
@@ -61,7 +62,7 @@ auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
 }
 
 auto test_simd_support() -> void {
-    serial_print("  test simd: ");
+    kernel::serial_print("  test simd: ");
 
     alignas(16) float input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     alignas(16) float output[4] = {0.0f};
@@ -75,10 +76,10 @@ auto test_simd_support() -> void {
     auto colr = u32(0);
     if (int(output[0]) == 3 && int(output[0] * 10) % 10 == 5) {
         colr = 0x0000ff00;
-        serial_print("ok\n");
+        kernel::serial_print("ok\n");
     } else {
         colr = 0x00ff0000;
-        serial_print("failed\n");
+        kernel::serial_print("failed\n");
     }
     draw_rect(600u, 400u, 20u, 20u, colr);
 }
@@ -90,12 +91,13 @@ namespace osca {
 alignas(config::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
-    serial_print("osca x64 kernel is running\n");
+    kernel::serial_print("osca x64 kernel is running\n");
 
     jobs.init();
 
-    auto di = frame_buffer.pixels;
-    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+    auto di = kernel::frame_buffer.pixels;
+    for (auto i = 0u;
+         i < kernel::frame_buffer.stride * kernel::frame_buffer.height; ++i) {
         *di = 0x00000022;
         ++di;
     }
@@ -107,47 +109,47 @@ alignas(config::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     auto color = main_color;
     print_string(col_lbl, row, 0x00ffff00, "osca x64", 3);
     ++row;
-    auto kernel_addr = u64(kernel_start);
+    auto kernel_addr = u64(kernel::start);
     print_string(col_lbl, row, color, "kernel: ", 3);
     print_hex(col_val, row, color, kernel_addr, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "mmap: ", 3);
-    print_hex(col_val, row, color, u64(memory_map.buffer), 3);
+    print_hex(col_val, row, color, u64(kernel::memory_map.buffer), 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "gfx: ", 3);
-    print_hex(col_val, row, color, u64(frame_buffer.pixels), 3);
+    print_hex(col_val, row, color, u64(kernel::frame_buffer.pixels), 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "kbd gsi: ", 3);
-    print_hex(col_val, row, color, keyboard_config.gsi, 3);
+    print_hex(col_val, row, color, kernel::keyboard_config.gsi, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "kbd flgs: ", 3);
-    print_hex(col_val, row, color, keyboard_config.flags, 3);
+    print_hex(col_val, row, color, kernel::keyboard_config.flags, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "apic io: ", 3);
-    print_hex(col_val, row, color, u64(apic.io), 3);
+    print_hex(col_val, row, color, u64(kernel::apic.io), 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "lapic: ", 3);
-    print_hex(col_val, row, color, u64(apic.local), 3);
+    print_hex(col_val, row, color, u64(kernel::apic.local), 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     auto lapic_id =
-        (apic.local[0x020 / 4] >> 24) & 0xff; // local apic id register
+        (kernel::apic.local[0x020 / 4] >> 24) & 0xff; // local apic id register
     print_string(col_lbl, row, color, "lapic id: ", 3);
     print_hex(col_val, row, color, lapic_id, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "heapmem: ", 3);
-    print_hex(col_val, row, color, heap.size, 3);
+    print_hex(col_val, row, color, kernel::heap.size, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     print_string(col_lbl, row, color, "cores: ", 3);
-    print_hex(col_val, row, color, core_count, 3);
+    print_hex(col_val, row, color, kernel::core_count, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
     test_simd_support();
@@ -168,7 +170,7 @@ auto on_timer() -> void {
         u32 color;
         auto run() -> void {
             draw_rect(0, 0, 32, 32, color);
-            serial_print(".");
+            kernel::serial_print(".");
         }
     };
 
@@ -186,7 +188,7 @@ auto on_keyboard(u8 scancode) -> void {
         u8 scancode;
         auto run() -> void {
             draw_rect(32, 0, 32, 32, u32(scancode) << 16);
-            draw_rect(0, 20 * 8 * 3, frame_buffer.width, 4 * 8 * 3, 0);
+            draw_rect(0, 20 * 8 * 3, kernel::frame_buffer.width, 4 * 8 * 3, 0);
             print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
             print_hex(12, 20, 0x0000ff00, kbd_intr_total, 3);
             print_string(1, 21, 0x00ffffff, "scancode: ", 3);

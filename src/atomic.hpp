@@ -1,5 +1,7 @@
 #pragma once
+
 namespace atomic {
+
 template <typename T>
 auto inline compare_exchange_acquire_relaxed(T* target, T& expected, T desired,
                                              bool weak) -> bool {
@@ -40,4 +42,5 @@ template <typename T> auto inline store_release(T* target, T val) -> void {
 template <typename T> auto inline store_relaxed(T* target, T val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELAXED);
 }
+
 }; // namespace atomic
