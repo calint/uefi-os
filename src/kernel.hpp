@@ -61,6 +61,7 @@ auto inline inb(u16 port) -> u8 {
 }
 
 [[noreturn]] auto start() -> void;
+
 } // namespace kernel
 
 namespace kernel::serial {
