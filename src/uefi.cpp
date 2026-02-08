@@ -1,6 +1,5 @@
 #include <efi.h>
 
-#include "efierr.h"
 #include "kernel.hpp"
 
 namespace {
