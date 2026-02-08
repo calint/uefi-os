@@ -173,6 +173,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 };
                 auto entry = reinterpret_cast<MADT_EntryHeader*>(curr);
 
+                if (entry->length == 0) {
+                    // just in case
+                    break;
+                }
+
                 switch (entry->type) {
 
                 case 0: {
@@ -253,10 +258,6 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                     break;
                 }
 
-                if (entry->length == 0) {
-                    // just in case
-                    break;
-                }
                 curr += entry->length;
             }
             // done with apic configuration
