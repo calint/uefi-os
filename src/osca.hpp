@@ -127,8 +127,10 @@ template <u32 QueueSize = 256> class Jobs final {
             // (4) paired with release (3)
             auto seq = atomic::load_acquire(&entry.sequence);
             if (seq != t + 1) {
-                // note: ABA issue when another thread claimed and finished the
-                //       job before this thread checks
+                // note: ABA issue might have happened where a competing thread
+                //       claimed, and completed a job; in use case this is ok
+                //       since the thread will issue a pause and `run_next`
+                //       again
                 return false;
             }
 
@@ -164,7 +166,7 @@ template <u32 QueueSize = 256> class Jobs final {
         // this loop
 
         // (6) paired with release (5)
-        while (head_ != atomic_load_acquire(&completed_)) {
+        while (head_ != atomic::load_acquire(&completed_)) {
             kernel::core::pause();
         }
     }
