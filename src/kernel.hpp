@@ -29,12 +29,12 @@ struct KeyboardConfig {
 
 extern KeyboardConfig keyboard_config;
 
-struct APIC {
+struct Apic {
     u32 volatile* io;
     u32 volatile* local;
 };
 
-extern APIC apic;
+extern Apic apic;
 
 struct Core {
     u8 apic_id;

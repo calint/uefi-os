@@ -18,7 +18,7 @@ using namespace kernel;
 FrameBuffer kernel::frame_buffer;
 MemoryMap kernel::memory_map;
 KeyboardConfig kernel::keyboard_config;
-APIC kernel::apic;
+Apic kernel::apic;
 Core kernel::cores[256];
 u8 kernel::core_count = 0;
 Heap kernel::heap;
