@@ -1,7 +1,7 @@
 #pragma once
 
 #include "atomic.hpp"
-#include "cpu.hpp"
+#include "kernel.hpp"
 #include "types.hpp"
 
 namespace osca {
@@ -37,7 +37,7 @@ template <u32 QueueSize = 256> class Jobs final {
     using Func = auto (*)(void*) -> void;
 
     static auto constexpr JOB_SIZE =
-        cpu::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
+        kernel::cpu::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
     struct Entry {
         u8 data[JOB_SIZE];
@@ -46,29 +46,30 @@ template <u32 QueueSize = 256> class Jobs final {
         [[maybe_unused]] u32 padding;
     };
 
-    static_assert(sizeof(Entry) == cpu::CACHE_LINE_SIZE);
+    static_assert(sizeof(Entry) == kernel::cpu::CACHE_LINE_SIZE);
 
     // note: different cache lines avoiding false sharing
 
     // job storage:
     // * single producer writes
     // * multiple consumers read only after claiming via tail
-    alignas(cpu::CACHE_LINE_SIZE) Entry queue_[QueueSize];
+    alignas(kernel::cpu::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // read and written by producer
-    alignas(cpu::CACHE_LINE_SIZE) u32 head_;
+    alignas(kernel::cpu::CACHE_LINE_SIZE) u32 head_;
 
     // modified atomically by consumers
-    alignas(cpu::CACHE_LINE_SIZE) u32 tail_;
+    alignas(kernel::cpu::CACHE_LINE_SIZE) u32 tail_;
 
     // written by producer
-    alignas(cpu::CACHE_LINE_SIZE) u32 submitted_;
+    alignas(kernel::cpu::CACHE_LINE_SIZE) u32 submitted_;
 
     // read by producer written by consumers
-    alignas(cpu::CACHE_LINE_SIZE) u32 completed_;
+    alignas(kernel::cpu::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
-    [[maybe_unused]] u8 padding[cpu::CACHE_LINE_SIZE - sizeof(completed_)];
+    [[maybe_unused]] u8
+        padding[kernel::cpu::CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
     // safe to run while threads are running attempting `run_next`
@@ -115,7 +116,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // blocks while queue is full
     template <is_job T, typename... Args> auto add(Args&&... args) -> void {
         while (!try_add<T>(args...)) {
-            cpu::pause();
+            kernel::cpu::pause();
         }
     }
 
@@ -173,7 +174,7 @@ template <u32 QueueSize = 256> class Jobs final {
             if (submitted_ - completed == 0) {
                 break;
             }
-            cpu::pause();
+            kernel::cpu::pause();
         }
     }
 };

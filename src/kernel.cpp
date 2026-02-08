@@ -1,7 +1,6 @@
 #include <efi.h>
 
 #include "config.hpp"
-#include "cpu.hpp"
 #include "kernel.hpp"
 
 // failure model:

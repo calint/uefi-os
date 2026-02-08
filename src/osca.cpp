@@ -1,6 +1,5 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
-#include "cpu.hpp"
 #include "kernel.hpp"
 
 namespace {
@@ -89,7 +88,7 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
-alignas(cpu::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
+alignas(kernel::cpu::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
     kernel::serial::print("osca x64 kernel is running\n");
@@ -155,10 +154,10 @@ alignas(cpu::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     ++row;
     test_simd_support();
 
-    cpu::interrupts_enable();
+    kernel::cpu::interrupts_enable();
 
     while (true) {
-        cpu::halt();
+        kernel::cpu::halt();
     }
 }
 
@@ -205,7 +204,7 @@ auto on_keyboard(u8 scancode) -> void {
     while (true) {
         if (!jobs.run_next()) {
             // queue was for sure empty
-            cpu::pause();
+            kernel::cpu::pause();
         }
     }
 }
