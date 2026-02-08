@@ -135,6 +135,7 @@ template <u32 QueueSize = 256> class Jobs final {
                 // note: ABA issue when another thread claimed and finished the
                 //       job before this thread checks, resulting in spurious
                 //       false
+
                 // slot is not ready to run or queue is empty
                 return false;
             }
