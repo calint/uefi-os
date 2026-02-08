@@ -63,7 +63,7 @@ auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
 }
 
 auto test_simd_support() -> void {
-    kernel::serial_print("  test simd: ");
+    kernel::serial::print("  test simd: ");
 
     alignas(16) float input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     alignas(16) float output[4] = {0.0f};
@@ -77,10 +77,10 @@ auto test_simd_support() -> void {
     auto colr = u32(0);
     if (int(output[0]) == 3 && int(output[0] * 10) % 10 == 5) {
         colr = 0x0000ff00;
-        kernel::serial_print("ok\n");
+        kernel::serial::print("ok\n");
     } else {
         colr = 0x00ff0000;
-        kernel::serial_print("failed\n");
+        kernel::serial::print("failed\n");
     }
     draw_rect(600u, 400u, 20u, 20u, colr);
 }
@@ -92,7 +92,7 @@ namespace osca {
 alignas(cpu::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
 
 [[noreturn]] auto start() -> void {
-    kernel::serial_print("osca x64 kernel is running\n");
+    kernel::serial::print("osca x64 kernel is running\n");
 
     jobs.init();
 
@@ -171,7 +171,7 @@ auto on_timer() -> void {
         u32 color;
         auto run() -> void {
             draw_rect(0, 0, 32, 32, color);
-            kernel::serial_print(".");
+            kernel::serial::print(".");
         }
     };
 

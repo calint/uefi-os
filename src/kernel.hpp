@@ -72,13 +72,15 @@ auto inline inb(u16 port) -> u8 {
     return result;
 }
 
-auto inline serial_print(char const* s) -> void {
+namespace serial {
+
+auto inline print(char const* s) -> void {
     while (*s) {
         outb(0x3f8, u8(*s++));
     }
 }
 
-auto inline serial_print_hex(u64 val) -> void {
+auto inline print_hex(u64 val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 60; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
@@ -88,7 +90,7 @@ auto inline serial_print_hex(u64 val) -> void {
     }
 }
 
-auto inline serial_print_dec(u64 val) -> void {
+auto inline print_dec(u64 val) -> void {
     // case for zero
     if (val == 0) {
         outb(0x3f8, '0');
@@ -113,12 +115,14 @@ auto inline serial_print_dec(u64 val) -> void {
     }
 }
 
-auto inline serial_print_hex_byte(u8 val) -> void {
+auto inline print_hex_byte(u8 val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 4; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
     }
 }
+
+} // namespace serial
 
 [[noreturn]] auto start() -> void;
 } // namespace kernel

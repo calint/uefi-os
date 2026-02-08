@@ -191,7 +191,7 @@ auto make_heap() -> Heap {
 auto allocate_page() -> void* {
     // ensure heap has at least one 4k page remaining
     if (heap.size < 4096) {
-        serial_print("error: out of memory for paging\n");
+        serial::print("error: out of memory for paging\n");
         panic(0xff00'0000); // red screen: fatal
     }
 
@@ -208,7 +208,7 @@ auto allocate_pages(u64 num_pages) -> void* {
 
     // ensure heap has at least one 4k page remaining
     if (heap.size < bytes) {
-        serial_print("error: out of memory when allocating pages\n");
+        serial::print("error: out of memory when allocating pages\n");
         panic(0xffff'0000); // red screen: fatal
     }
 
@@ -356,7 +356,7 @@ auto init_paging() -> void {
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
             // acpi tables: must be mapped to parse hardware config later
-            // serial_print("* acpi tables\n");
+            // serial::print("* acpi tables\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
         } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
@@ -365,12 +365,12 @@ auto init_paging() -> void {
             // kernel binary + current uefi stack
             // note: EfiBootServiceCode and Data is mapped because current stack
             //       is there
-            // serial_print("* loaded kernel and current stack\n");
+            // serial::print("* loaded kernel and current stack\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
         } else if (d->Type == EfiConventionalMemory) {
             // general purpose ra
-            // serial_print("* memory\n");
+            // serial::print("* memory\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
             free_mem_B += d->NumberOfPages * 4096;
@@ -381,45 +381,45 @@ auto init_paging() -> void {
             }
         } else if (d->Type == EfiMemoryMappedIO) {
             // generic hardware mmio regions
-            // serial_print("* mmio region\n");
+            // serial::print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
 
-    serial_print("  total: ");
-    serial_print_dec(total_mem_B / 1024);
-    serial_print(" KB\n");
+    serial::print("  total: ");
+    serial::print_dec(total_mem_B / 1024);
+    serial::print(" KB\n");
 
-    serial_print("   free: ");
-    serial_print_dec(free_mem_B / 1024);
-    serial_print(" KB\n");
+    serial::print("   free: ");
+    serial::print_dec(free_mem_B / 1024);
+    serial::print(" KB\n");
 
-    serial_print("   used: ");
-    serial_print_dec((total_mem_B - free_mem_B) / 1024);
-    serial_print(" KB\n");
+    serial::print("   used: ");
+    serial::print_dec((total_mem_B - free_mem_B) / 1024);
+    serial::print(" KB\n");
 
     if (!trampoline_memory_is_free) {
-        serial_print("abort: memory used by trampoline not free\n");
+        serial::print("abort: memory used by trampoline not free\n");
         panic(0x00'00'ff'ff);
     }
 
-    // serial_print("* apic mmio\n");
+    // serial::print("* apic mmio\n");
     // map apic registers for interrupt handling
     map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
     map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
 
-    // serial_print("* frame buffer\n");
+    // serial::print("* frame buffer\n");
     // map frame buffer with write-combining (pat index 4)
     auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(u64(frame_buffer.pixels),
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
 
-    // serial_print("* heap\n");
+    // serial::print("* heap\n");
     // map the dynamic memory pool
     map_range(heap_start, heap_size, RAM_FLAGS);
 
-    // serial_print("* trampoline\n");
+    // serial::print("* trampoline\n");
     // explicitly map the first 2MB as identity mapped (including 0x8000)
     map_range(0x0, 0x20'0000, RAM_FLAGS);
 
@@ -527,7 +527,7 @@ auto inline init_keyboard() -> void {
     while (inb(0x64) & 0x01) {
         inb(0x60);
         if (++flush_count > 100) {
-            serial_print("  flush timeout\n");
+            serial::print("  flush timeout\n");
             break;
         }
     }
@@ -537,7 +537,7 @@ auto inline init_keyboard() -> void {
     auto wait_count = 0u;
     while (inb(0x64) & 0x02) {
         if (++wait_count > 100000) {
-            serial_print("  controller timeout\n");
+            serial::print("  controller timeout\n");
             return;
         }
         cpu::pause();
@@ -553,7 +553,7 @@ auto inline init_keyboard() -> void {
         if (inb(0x64) & 0x01) {
             auto response = inb(0x60);
             if (response == 0xfa) {
-                serial_print("  ack\n");
+                serial::print("  ack\n");
                 ack_received = true;
                 break;
             }
@@ -562,7 +562,7 @@ auto inline init_keyboard() -> void {
     }
 
     if (!ack_received) {
-        serial_print("  warning: kbd did not ack\n");
+        serial::print("  warning: kbd did not ack\n");
     }
 }
 
@@ -623,9 +623,9 @@ extern "C" auto kernel_on_keyboard() -> void {
         auto scancode = inb(0x60);
 
         // diagnostic: log scancode to serial for debugging
-        serial_print("|");
-        serial_print_hex_byte(scancode);
-        serial_print("|");
+        serial::print("|");
+        serial::print_hex_byte(scancode);
+        serial::print("|");
 
         // pass scancode to the operating system's input layer
         osca::on_keyboard(scancode);
@@ -813,9 +813,9 @@ auto inline init_cores() {
     //       x86 cache coherence guarantees visibility to APs
     //       no cache flushes or fences required
 
-    serial_print("  count: ");
-    serial_print_dec(core_count);
-    serial_print("\n");
+    serial::print("  count: ");
+    serial::print_dec(core_count);
+    serial::print("\n");
 
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
@@ -874,31 +874,31 @@ auto inline init_cores() {
 
 [[noreturn]] auto kernel::start() -> void {
     init_serial();
-    serial_print("serial initiated\n");
+    serial::print("serial initiated\n");
 
     heap = make_heap();
 
-    serial_print("enable_sse\n");
+    serial::print("enable_sse\n");
     init_sse();
 
-    serial_print("init_gdt\n");
+    serial::print("init_gdt\n");
     init_gdt();
 
-    serial_print("init_paging\n");
+    serial::print("init_paging\n");
     init_paging();
 
-    serial_print("init_idt\n");
+    serial::print("init_idt\n");
     init_idt();
 
-    serial_print("init_timer\n");
+    serial::print("init_timer\n");
     init_timer();
 
-    serial_print("init_keyboard\n");
+    serial::print("init_keyboard\n");
     init_keyboard();
 
-    serial_print("init_cores\n");
+    serial::print("init_cores\n");
     init_cores();
 
-    serial_print("osca_start\n");
+    serial::print("osca_start\n");
     osca_start();
 }
