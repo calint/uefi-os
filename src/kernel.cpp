@@ -192,7 +192,7 @@ auto allocate_page() -> void* {
     // ensure heap has at least one 4k page remaining
     if (heap.size < 4096) {
         serial::print("error: out of memory for paging\n");
-        panic(0xff00'0000); // red screen: fatal
+        panic(0xff'00'00'00); // red screen: fatal
     }
 
     auto ptr = heap.start;
@@ -209,7 +209,7 @@ auto allocate_pages(u64 num_pages) -> void* {
     // ensure heap has at least one 4k page remaining
     if (heap.size < bytes) {
         serial::print("error: out of memory when allocating pages\n");
-        panic(0xffff'0000); // red screen: fatal
+        panic(0xff'ff'00'00); // red screen: fatal
     }
 
     auto p = heap.start;
@@ -692,7 +692,7 @@ extern "C" u8 run_core_started_flag = 0;
     }
 
     // core not found
-    panic(0xffffffff);
+    panic(0xff'ff'ff'ff);
 }
 
 auto inline delay_cycles(u64 cycles) -> void {
