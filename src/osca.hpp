@@ -60,9 +60,6 @@ template <u32 QueueSize = 256> class Jobs final {
     // modified atomically by consumers
     alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
 
-    // written by producer
-    alignas(kernel::core::CACHE_LINE_SIZE) u32 submitted_;
-
     // read by producer written by consumers
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
@@ -75,7 +72,6 @@ template <u32 QueueSize = 256> class Jobs final {
     auto init() -> void {
         head_ = 0;
         tail_ = 0;
-        submitted_ = 0;
         completed_ = 0;
         for (auto i = 0u; i < QueueSize; ++i) {
             queue_[i].sequence = i;
@@ -101,7 +97,6 @@ template <u32 QueueSize = 256> class Jobs final {
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
         *ptr<T>(entry.data) = {args...};
-        ++submitted_;
         ++head_;
 
         // hand over the slot to be run
@@ -159,21 +154,17 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return submitted_ - atomic::load_relaxed(&completed_);
+        return head_ - atomic::load_relaxed(&completed_);
     }
 
     // called from producer
     // spin until all work is finished
     auto wait_idle() const -> void {
-        while (true) {
-            // note: since this is the producer, `submitted_` won't increase
-            // while in this loop
+        // note: since this is the producer, `head_` will not change while in
+        // this loop
 
-            // (6) paired with release (5)
-            auto completed = atomic::load_acquire(&completed_);
-            if (submitted_ - completed == 0) {
-                break;
-            }
+        // (6) paired with release (5)
+        while (head_ != atomic_load_acquire(&completed_)) {
             kernel::core::pause();
         }
     }
