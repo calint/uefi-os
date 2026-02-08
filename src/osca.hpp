@@ -122,7 +122,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from multiple consumers
     // returns:
     //   true if job was run
-    //   false if queue was empty or next job is not ready
+    //   false if no job was run
     auto run_next() -> bool {
         while (true) {
             // optimistic read; job data visible at (4), claimed at (7)
@@ -133,10 +133,7 @@ template <u32 QueueSize = 256> class Jobs final {
             auto seq = atomic::load_acquire(&entry.sequence);
             if (seq != t + 1) {
                 // note: ABA issue when another thread claimed and finished the
-                //       job before this thread checks, resulting in spurious
-                //       false
-
-                // slot is not ready to run or queue is empty
+                //       job before this thread checks
                 return false;
             }
 
