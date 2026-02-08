@@ -31,7 +31,7 @@ namespace {
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
 //       make sure top of stack is 16 bytes aligned
-alignas(16) static u8 kernel_stack[16384 * 16];
+alignas(16) static u8 kernel_stack[4096];
 
 [[noreturn]] auto panic(u32 color) -> void {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
