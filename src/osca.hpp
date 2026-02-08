@@ -2,7 +2,6 @@
 
 #include "atomic.hpp"
 #include "kernel.hpp"
-#include "types.hpp"
 
 namespace osca {
 
