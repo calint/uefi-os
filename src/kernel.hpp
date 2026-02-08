@@ -2,18 +2,6 @@
 
 #include "types.hpp"
 
-extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
-    void* original_s = s;
-    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
-    return original_s;
-}
-
-extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
-    void* original_dest = dest;
-    asm volatile("rep movsb" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
-    return original_dest;
-}
-
 namespace kernel {
 
 struct FrameBuffer {
@@ -72,7 +60,10 @@ auto inline inb(u16 port) -> u8 {
     return result;
 }
 
-namespace serial {
+[[noreturn]] auto start() -> void;
+} // namespace kernel
+
+namespace kernel::serial {
 
 auto inline print(char const* s) -> void {
     while (*s) {
@@ -122,11 +113,9 @@ auto inline print_hex_byte(u8 val) -> void {
     }
 }
 
-} // namespace serial
+} // namespace kernel::serial
 
-[[noreturn]] auto start() -> void;
-} // namespace kernel
-
+// binding to osca
 namespace osca {
 
 [[noreturn]] auto start() -> void;
@@ -135,3 +124,19 @@ auto on_keyboard(u8 scancode) -> void;
 auto on_timer() -> void;
 
 } // namespace osca
+
+//
+// built-in replacements
+//
+
+extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
+    void* original_s = s;
+    asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
+    return original_s;
+}
+
+extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
+    void* original_dest = dest;
+    asm volatile("rep movsb" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
+    return original_dest;
+}
