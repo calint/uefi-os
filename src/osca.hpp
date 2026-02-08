@@ -142,7 +142,6 @@ template <u32 QueueSize = 256> class Jobs final {
 
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
-
             // (7) atomically claims this job from competing consumers
             if (atomic::compare_exchange_acquire_relaxed(&tail_, t, t + 1,
                                                          true)) {
