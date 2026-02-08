@@ -493,7 +493,7 @@ auto inline init_timer() -> void {
 
     // icr (initial count register): set the countdown start value
     // uses calibration logic to determine 2hz (0.5s interval)
-    apic.local[0x380 / 4] = calibrate_apic(2);
+    apic.local[0x380 / 4] = calibrate_apic(config::TIMER_FREQUENCE_HZ);
 }
 
 // io-apic register access
