@@ -539,7 +539,7 @@ auto inline init_keyboard() -> void {
             serial::print("  controller timeout\n");
             return;
         }
-        cpu::pause();
+        core::pause();
     }
 
     // send command 0xf4: enable scanning
@@ -557,7 +557,7 @@ auto inline init_keyboard() -> void {
                 break;
             }
         }
-        cpu::pause();
+        core::pause();
     }
 
     if (!ack_received) {
@@ -696,7 +696,7 @@ extern "C" u8 run_core_started_flag = 0;
 
 auto inline delay_cycles(u64 cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
-        cpu::pause();
+        core::pause();
     }
 }
 
@@ -733,7 +733,7 @@ auto delay_us(u64 us) -> void {
         // poll bit 5 of port 0x61
         // this bit goes high when the pit counter hits zero
         while (!(inb(0x61) & 0x20)) {
-            cpu::pause();
+            core::pause();
         }
 
         // stop the gate and decrement our total tick count.
@@ -751,7 +751,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait until the delivery status bit clears
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu::pause();
+        core::pause();
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
@@ -768,7 +768,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // wait for delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu::pause();
+        core::pause();
     }
 
     // 200us delay before retry (intel requirement)
@@ -782,7 +782,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
 
     // final delivery check
     while (apic.local[0x300 / 4] & (1 << 12)) {
-        cpu::pause();
+        core::pause();
     }
 }
 
@@ -864,7 +864,7 @@ auto inline init_cores() {
 
         // wait for core to start
         while (run_core_started_flag == 0) {
-            cpu::pause();
+            core::pause();
         }
     }
 }
