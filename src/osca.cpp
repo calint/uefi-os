@@ -1,5 +1,6 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
+#include "cpu.hpp"
 #include "kernel.hpp"
 
 namespace {
@@ -157,7 +158,7 @@ alignas(config::CACHE_LINE_SIZE) Jobs<256> jobs; // note: 0 initialized
     cpu::interrupts_enable();
 
     while (true) {
-        asm volatile("hlt");
+        cpu::halt();
     }
 }
 
