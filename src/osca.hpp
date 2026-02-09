@@ -69,8 +69,8 @@ template <u32 QueueSize = 256> class Jobs final {
         padding[kernel::core::CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
-    // safe to run while cores are running attempting `run_next` if assumed
-    // zero initialized in data section
+    // safe to run while cores are attempting `run_next` if assumed zero
+    // initialized in data section
     auto init() -> void {
         // initialize sequence
         for (auto i = 1u; i < QueueSize; ++i) {
