@@ -39,7 +39,7 @@ template <u32 QueueSize = 256> class Jobs final {
     static auto constexpr JOB_SIZE =
         kernel::core::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
 
-    struct Entry {
+    struct alignas(kernel::core::CACHE_LINE_SIZE) Entry {
         u8 data[JOB_SIZE];
         Func func;
         u32 sequence;
@@ -176,7 +176,7 @@ template <u32 QueueSize = 256> class Jobs final {
     }
 };
 
-alignas(kernel::core::CACHE_LINE_SIZE) Jobs<256> inline jobs;
+Jobs<256> inline jobs;
 // note: 0 initialized
 
 } // namespace osca
