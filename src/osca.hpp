@@ -65,8 +65,7 @@ template <u32 QueueSize = 256> class Jobs final {
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
-    [[maybe_unused]] u8
-        padding[kernel::core::CACHE_LINE_SIZE - sizeof(completed_)];
+    u8 padding[kernel::core::CACHE_LINE_SIZE - sizeof(completed_)];
 
   public:
     // safe to run while threads are running attempting `run_next` if assumed
