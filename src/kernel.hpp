@@ -11,7 +11,7 @@ struct FrameBuffer {
     u32 stride;
 };
 
-inline FrameBuffer frame_buffer;
+FrameBuffer inline frame_buffer;
 
 struct MemoryMap {
     void* buffer;
@@ -20,35 +20,35 @@ struct MemoryMap {
     u32 descriptor_version;
 };
 
-inline MemoryMap memory_map;
+MemoryMap inline memory_map;
 
 struct KeyboardConfig {
     u32 gsi;
     u32 flags;
 };
 
-inline KeyboardConfig keyboard_config;
+KeyboardConfig inline keyboard_config;
 
 struct Apic {
     u32 volatile* io;
     u32 volatile* local;
 };
 
-inline Apic apic;
+Apic inline apic;
 
 struct Core {
     u8 apic_id;
 };
 
-inline Core cores[256];
-inline u8 core_count;
+Core inline cores[256];
+u8 inline core_count;
 
 struct Heap {
     void* start;
     u64 size;
 };
 
-inline Heap heap;
+Heap inline heap;
 
 auto inline outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
