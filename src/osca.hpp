@@ -178,6 +178,7 @@ template <u32 QueueSize = 256> class Jobs final {
     }
 };
 
-extern Jobs<256> jobs;
+alignas(
+    kernel::core::CACHE_LINE_SIZE) inline Jobs<256> jobs; // note: 0 initialized
 
 } // namespace osca

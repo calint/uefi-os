@@ -11,7 +11,7 @@ struct FrameBuffer {
     u32 stride;
 };
 
-extern FrameBuffer frame_buffer;
+inline FrameBuffer frame_buffer;
 
 struct MemoryMap {
     void* buffer;
@@ -20,35 +20,35 @@ struct MemoryMap {
     u32 descriptor_version;
 };
 
-extern MemoryMap memory_map;
+inline MemoryMap memory_map;
 
 struct KeyboardConfig {
     u32 gsi;
     u32 flags;
 };
 
-extern KeyboardConfig keyboard_config;
+inline KeyboardConfig keyboard_config;
 
 struct Apic {
     u32 volatile* io;
     u32 volatile* local;
 };
 
-extern Apic apic;
+inline Apic apic;
 
 struct Core {
     u8 apic_id;
 };
 
-extern Core cores[];
-extern u8 core_count;
+inline Core cores[256];
+inline u8 core_count;
 
 struct Heap {
     void* start;
     u64 size;
 };
 
-extern Heap heap;
+inline Heap heap;
 
 auto inline outb(u16 port, u8 val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -137,6 +137,9 @@ auto on_keyboard(u8 scancode) -> void;
 auto on_timer() -> void;
 
 } // namespace osca
+
+// required by msvc/clang abi when floating-point arithmetic is used
+extern "C" i32 _fltused;
 
 //
 // built-in replacements

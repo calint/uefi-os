@@ -14,18 +14,6 @@
 
 using namespace kernel;
 
-FrameBuffer kernel::frame_buffer;
-MemoryMap kernel::memory_map;
-KeyboardConfig kernel::keyboard_config;
-Apic kernel::apic;
-Core kernel::cores[256];
-u8 kernel::core_count = 0;
-Heap kernel::heap;
-
-// required by msvc/clang abi when floating-point arithmetic is used
-extern "C" i32 _fltused;
-extern "C" i32 _fltused = 0;
-
 namespace {
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
@@ -670,8 +658,7 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 // In your global scope
-extern "C" u8 run_core_started_flag;
-extern "C" u8 run_core_started_flag = 0;
+inline u8 run_core_started_flag;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
@@ -901,3 +888,6 @@ auto inline init_cores() {
     serial::print("osca_start\n");
     osca_start();
 }
+
+// required by msvc/clang abi when floating-point arithmetic is used
+extern "C" i32 _fltused = 0;
