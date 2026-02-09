@@ -96,7 +96,10 @@ template <u32 QueueSize = 256> class Jobs final {
         }
 
         // prepare slot
-        entry.func = [](void* data) { ptr<T>(data)->run(); };
+        entry.func = [](void* data) {
+            ptr<T>(data)->run();
+            ptr<T>(data)->~T();
+        };
         new (entry.data) T{fwd<Args>(args)...};
         ++head_;
 
