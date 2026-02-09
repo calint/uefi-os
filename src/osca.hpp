@@ -43,7 +43,7 @@ template <u32 QueueSize = 256> class Jobs final {
         u8 data[JOB_SIZE];
         Func func;
         u32 sequence;
-        [[maybe_unused]] u32 padding;
+        u32 padding;
     };
 
     static_assert(sizeof(Entry) == kernel::core::CACHE_LINE_SIZE);
