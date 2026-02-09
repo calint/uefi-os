@@ -2,6 +2,7 @@
 
 #include "atomic.hpp"
 #include "kernel.hpp"
+#include "types.hpp"
 
 namespace osca {
 
@@ -96,7 +97,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // prepare slot
         entry.func = [](void* data) { ptr<T>(data)->run(); };
-        *ptr<T>(entry.data) = {args...};
+        new (entry.data) T{fwd<Args>(args)...};
         ++head_;
 
         // hand over the slot to be run

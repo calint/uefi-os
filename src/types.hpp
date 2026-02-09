@@ -23,3 +23,26 @@ template <typename T> auto inline ptr(void const* p) -> T const* {
 template <typename T> auto inline ptr(uptr p) -> T* {
     return reinterpret_cast<T*>(p);
 }
+
+// allow new in place
+auto inline operator new(u64, void* p) noexcept -> void* { return p; }
+
+auto inline operator delete(void*, void*) noexcept -> void {}
+
+// allow perfect forwarding
+template <typename T> struct remove_reference {
+    using type = T;
+};
+
+template <typename T> struct remove_reference<T&> {
+    using type = T;
+};
+
+template <typename T> struct remove_reference<T&&> {
+    using type = T;
+};
+
+template <typename T>
+auto constexpr fwd(typename remove_reference<T>::type& t) noexcept -> T&& {
+    return static_cast<T&&>(t);
+}
