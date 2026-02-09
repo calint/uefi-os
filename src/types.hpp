@@ -24,11 +24,6 @@ template <typename T> auto inline ptr(uptr p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
-// allow new in place
-auto inline operator new(size_t, void* p) noexcept -> void* { return p; }
-
-auto inline operator delete(void*, void*) noexcept -> void {}
-
 // allow perfect forwarding
 template <typename T> struct remove_reference {
     using type = T;
