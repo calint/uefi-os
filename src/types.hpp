@@ -12,6 +12,8 @@ using uptr = u64;
 using f32 = float;
 using f64 = double;
 
+// short hands for `reinterpret_cast`
+
 template <typename T> auto inline ptr(void* p) -> T* {
     return reinterpret_cast<T*>(p);
 }
@@ -24,7 +26,8 @@ template <typename T> auto inline ptr(uptr p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
-// allow perfect forwarding
+// perfect forwarding
+
 template <typename T> struct remove_reference {
     using type = T;
 };
