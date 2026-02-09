@@ -52,7 +52,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
     // job storage:
     // * single producer writes
-    // * multiple consumers read only after claiming via tail
+    // * multiple consumers read and write atomically after claiming via tail
     alignas(kernel::core::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // read and written by producer
