@@ -23,7 +23,7 @@ concept is_job = is_trivially_copyable<T> && requires(T t) {
 // thread safety:
 //   * try_add(), add(): single producer thread only
 //   * run_next(): multiple consumer threads safe
-//   * wait_idle(): safe from producer thread, blocks until all jobs complete
+//   * wait_idle(): safe from producer thread
 //
 // constraints:
 //   * max job parameters size: 48 bytes
@@ -147,6 +147,7 @@ template <u32 QueueSize = 256> class Jobs final {
                 // increment completed
                 // (5) paired with acquire (6)
                 atomic::add_release(&completed_, 1u);
+
                 return true;
             }
 
