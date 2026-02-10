@@ -12,7 +12,7 @@ using uptr = u64;
 using f32 = float;
 using f64 = double;
 
-// short hands for `reinterpret_cast`
+// short hands for pointer casts
 
 template <typename T> auto inline ptr(void* p) -> T* {
     return static_cast<T*>(p);
