@@ -37,26 +37,23 @@ template <u32 QueueSize = 256> class Jobs final {
         u8 data[JOB_SIZE];
         Func func;
         u32 sequence;
-        u32 padding;
-        // note: pad so func remains 8-byte aligned and sequence 4-byte aligned
+        u32 unused;
     };
 
     static_assert(sizeof(Entry) == kernel::core::CACHE_LINE_SIZE);
 
     // note: different cache lines avoiding false sharing
 
-    // job storage:
-    // * single producer writes
-    // * multiple consumers read and write atomically after claiming via tail
+    // producer reads and writes, consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
-    // read and written by producer
+    // producer reads and writes
     alignas(kernel::core::CACHE_LINE_SIZE) u32 head_;
 
-    // modified atomically by consumers
+    // consumers atomically modify
     alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
 
-    // read by producer written by consumers
+    // producer atomically reads, consumers atomically writes
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
@@ -176,6 +173,5 @@ template <u32 QueueSize = 256> class Jobs final {
 };
 
 Jobs<256> inline jobs;
-// note: 0 initialized
 
 } // namespace osca
