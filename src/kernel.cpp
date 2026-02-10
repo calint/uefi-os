@@ -20,7 +20,7 @@ namespace {
 //       make sure top of stack is 16 bytes aligned
 alignas(16) static u8 kernel_stack[4096];
 
-[[noreturn]] auto panic(u32 color) -> void {
+[[noreturn]] auto panic(u32 const color) -> void {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         frame_buffer.pixels[i] = color;
     }
@@ -110,9 +110,9 @@ auto inline init_gdt() -> void {
     // code access 0x9a: 10011010b (present, ring 0, code, exec/read)
     // code gran 0x20: 00100000b (l-bit set: marks 64-bit long mode)
     // data access 0x92: 10010010b (present, ring 0, data, read/write)
-    alignas(8) auto static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
-                                     .code = {0, 0, 0, 0x9a, 0x20, 0},
-                                     .data = {0, 0, 0, 0x92, 0x00, 0}};
+    alignas(8) auto const static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
+                                           .code = {0, 0, 0, 0x9a, 0x20, 0},
+                                           .data = {0, 0, 0, 0x92, 0x00, 0}};
 
     // the 10-byte pointer passed to the lgdt instruction
     struct [[gnu::packed]] GDTDescriptor {
@@ -120,7 +120,7 @@ auto inline init_gdt() -> void {
         u64 offset;
     };
 
-    auto descriptor =
+    auto const descriptor =
         GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
 
     asm volatile("lgdt %0\n\t"         // load gdt register (gdtr)
@@ -147,18 +147,18 @@ auto make_heap() -> Heap {
     auto aligned_size = 0ull;
 
     // parse uefi memory descriptors
-    auto desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
-    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
+    auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
 
     for (auto i = 0u; i < num_descriptors; ++i) {
         // step by uefi-defined descriptor size
-        auto d = ptr<EFI_MEMORY_DESCRIPTOR>(uptr(desc) +
-                                            (i * memory_map.descriptor_size));
+        auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
+            uptr(desc), (i * memory_map.descriptor_size));
 
         // usable ram not reserved by firmware/acpi
         if (d->Type == EfiConventionalMemory) {
-            auto chunk_start = d->PhysicalStart;
-            auto chunk_size = d->NumberOfPages * 4096;
+            auto const chunk_start = d->PhysicalStart;
+            auto const chunk_size = d->NumberOfPages * 4096;
 
             // find contiguous maximum for the heap
             if (chunk_size > largest_chunk_size) {
@@ -182,16 +182,16 @@ auto allocate_page() -> void* {
         panic(0xff'00'00'00); // red screen: fatal
     }
 
-    auto p = heap.start;
-    heap.start = ptr<void>(uptr(heap.start) + 4096);
+    auto* p = heap.start;
+    heap.start = ptr_offset<void>(heap.start, 4096);
     heap.size -= 4096;
     memset(p, 0, 4096);
     return p;
 }
 
 // pops zeroed pages
-auto allocate_pages(u64 num_pages) -> void* {
-    auto bytes = num_pages * 4096;
+auto allocate_pages(u64 const num_pages) -> void* {
+    auto const bytes = num_pages * 4096;
 
     // ensure heap has at least one 4k page remaining
     if (heap.size < bytes) {
@@ -199,8 +199,8 @@ auto allocate_pages(u64 num_pages) -> void* {
         panic(0xff'ff'00'00); // red screen: fatal
     }
 
-    auto p = heap.start;
-    heap.start = ptr<void>(uptr(heap.start) + bytes);
+    auto* p = heap.start;
+    heap.start = ptr_offset<void>(heap.start, bytes);
     heap.size -= bytes;
     memset(p, 0, bytes);
     return p;
@@ -213,7 +213,7 @@ auto get_next_table(u64* table, u64 index) -> u64* {
     // check bit 0 (p): present
     if (!(table[index] & 0x01)) {
         // create next level only when needed
-        void* next = allocate_page(); // zeroed 4KB chunk
+        auto const* next = allocate_page(); // zeroed 4KB chunk
         // link new table: set physical address and flags
         // 0x03: present | writable
         table[index] = uptr(next) | 0x03;
@@ -258,7 +258,7 @@ auto constexpr USE_PAT_WC = (1ull << 12);
 
 // range mapping with hybrid page sizes
 // creates identity mappings with optimized page sizes
-auto inline map_range(u64 phys, u64 size, u64 flags) -> void {
+auto inline map_range(u64 const phys, u64 const size, u64 const flags) -> void {
     // page alignment: floor start and ceil end to 4kb boundaries
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
@@ -275,8 +275,8 @@ auto inline map_range(u64 phys, u64 size, u64 flags) -> void {
         auto pt_idx = (addr >> 12) & 0x1ff;
 
         // traverse hierarchy: allocate lower tables as needed
-        auto pdp = get_next_table(long_mode_pml4, pml4_idx);
-        auto pd = get_next_table(pdp, pdp_idx);
+        auto* pdp = get_next_table(long_mode_pml4, pml4_idx);
+        auto* pd = get_next_table(pdp, pdp_idx);
 
         // check if 2mb mapping is possible: aligned start and sufficient size
         if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
@@ -295,7 +295,7 @@ auto inline map_range(u64 phys, u64 size, u64 flags) -> void {
             addr += 0x20'0000; // jump by 2mb
         } else {
             // standard page: leaf exists at level 1 (pt)
-            auto pt = get_next_table(pd, pd_idx);
+            auto* pt = get_next_table(pd, pd_idx);
             auto entry_flags = flags;
 
             if (flags & USE_PAT_WC) {
@@ -316,8 +316,8 @@ auto inline map_range(u64 phys, u64 size, u64 flags) -> void {
 // identity maps uefi memory, sets pat, and activates cr3
 auto init_paging() -> void {
     // preserve heap metadata before allocating page tables
-    auto heap_start = u64(heap.start);
-    auto heap_size = heap.size;
+    auto const heap_start = uptr(heap.start);
+    auto const heap_size = heap.size;
 
     // flag that is true after scanning memory if trampoline and protected mode
     // pages are in conventional memory
@@ -332,13 +332,13 @@ auto init_paging() -> void {
     auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
 
     // parse uefi memory map to identity-map system ram and firmware regions
-    auto desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
-    auto num_descriptors = memory_map.size / memory_map.descriptor_size;
+    auto const* desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     auto total_mem_B = u64(0);
     auto free_mem_B = u64(0);
     for (auto i = 0u; i < num_descriptors; ++i) {
-        auto d = ptr<EFI_MEMORY_DESCRIPTOR>(u64(desc) +
-                                            (i * memory_map.descriptor_size));
+        auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
+            desc, (i * memory_map.descriptor_size));
 
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
@@ -432,7 +432,7 @@ auto init_paging() -> void {
 }
 
 // apic timer calibration
-auto inline calibrate_apic(u32 hz) -> u32 {
+auto inline calibrate_apic(u32 const hz) -> u32 {
     // pit channel 0: set to mode 0 (interrupt on terminal count)
     // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e2b)
     outb(0x43, 0x30); // control: ch0, lo/hi, mode 0, binary
@@ -451,8 +451,8 @@ auto inline calibrate_apic(u32 hz) -> u32 {
         status = inb(0x40);
     }
     // lapic current count register (0x390): read remaining ticks
-    auto current_count = apic.local[0x390 / 4];
-    auto ticks_per_10ms = 0xffff'ffff - current_count;
+    auto const current_count = apic.local[0x390 / 4];
+    auto const ticks_per_10ms = 0xffff'ffff - current_count;
 
     // calculate divisor: (ticks in 10ms * 100) / target_hz
     // result is the initial count value for periodic interrupts
@@ -486,7 +486,7 @@ auto inline init_timer() -> void {
 
 // io-apic register access
 // writes to an io-apic register using the index/data window
-auto io_apic_write(u32 reg, u32 val) -> void {
+auto io_apic_write(u32 const reg, u32 const val) -> void {
     // ioregsel (offset 0x00): select the target register index
     apic.io[0] = reg;
 
@@ -499,7 +499,7 @@ auto io_apic_write(u32 reg, u32 val) -> void {
 // routes keyboard irq through io-apic and enables scanning
 auto inline init_keyboard() -> void {
     // get local apic id of the current cpu (bits 24-31 of offset 0x020)
-    auto cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
+    auto const cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     // configure io-apic redirection table for keyboard (usually gsi 1)
     // index 0x10 is the start of the redirection table (2 x 32-bit registers
@@ -538,7 +538,7 @@ auto inline init_keyboard() -> void {
     auto ack_received = false;
     for (auto i = 0u; i < 1'000'000; ++i) {
         if (inb(0x64) & 0x01) {
-            auto response = inb(0x60);
+            auto const response = inb(0x60);
             if (response == 0xfa) {
                 serial::print("  ack\n");
                 ack_received = true;
@@ -579,12 +579,12 @@ auto inline init_idt() -> void {
     // dpl: ring 0
     // type: disable nested interrupts
     // 8: second entry in the gdt (code)
-    auto apic_addr = u64(kernel_asm_timer_handler);
+    auto const apic_addr = u64(kernel_asm_timer_handler);
     idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                u32(apic_addr >> 32), 0};
 
     // set idt entry 33 (keyboard)
-    auto kbd_addr = u64(kernel_asm_keyboard_handler);
+    auto const kbd_addr = u64(kernel_asm_keyboard_handler);
     idt[33] = {u16(kbd_addr),       8, 0, 0x8e, u16(kbd_addr >> 16),
                u32(kbd_addr >> 32), 0};
 
@@ -594,7 +594,7 @@ auto inline init_idt() -> void {
         u64 base;
     };
 
-    auto idtr = IDTR{sizeof(idt) - 1, u64(idt)};
+    auto const idtr = IDTR{sizeof(idt) - 1, u64(idt)};
 
     // lidt: load the interrupt descriptor table register
     asm volatile("lidt %0" : : "m"(idtr));
@@ -607,7 +607,7 @@ extern "C" auto kernel_on_keyboard() -> void {
     // reading all pending bytes prevents the controller from getting "stuck"
     while (inb(0x64) & 0x01) {
         // read raw byte from data port
-        auto scancode = inb(0x60);
+        auto const scancode = inb(0x60);
 
         // diagnostic: log scancode to serial for debugging
         serial::print("|");
@@ -670,7 +670,7 @@ inline u8 run_core_started_flag;
     init_idt();
 
     // find this core index
-    auto apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
+    auto const apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
     for (auto i = 0u; i < core_count; ++i) {
         if (cores[i].apic_id == apic_id) {
             osca::run_core(i);
@@ -681,13 +681,13 @@ inline u8 run_core_started_flag;
     panic(0xff'ff'ff'ff);
 }
 
-auto inline delay_cycles(u64 cycles) -> void {
+auto inline delay_cycles(u64 const cycles) -> void {
     for (auto i = 0u; i < cycles; ++i) {
         core::pause();
     }
 }
 
-auto delay_us(u64 us) -> void {
+auto delay_us(u64 const us) -> void {
     // the pit frequency is a fixed hardware constant: 1.193182 mhz.
     auto constexpr pit_base_freq = 1'193'182u;
 
@@ -697,7 +697,7 @@ auto delay_us(u64 us) -> void {
     // the pit counter is only 16-bit (max 65535).
     // 65535 ticks at 1.19mhz is roughly 55ms.
     while (ticks > 0) {
-        auto current_batch = (ticks > 0xffff) ? 0xffffu : u16(ticks);
+        auto const current_batch = (ticks > 0xffff) ? 0xffffu : u16(ticks);
 
         // configure pit channel 2:
         // bits 7-6: 10 (channel 2)
@@ -729,7 +729,9 @@ auto delay_us(u64 us) -> void {
     }
 }
 
-auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
+auto inline send_init_sipi(u8 const apic_id, u32 const trampoline_address)
+    -> void {
+
     // select target core via high dword of icr
     apic.local[0x310 / 4] = u32(apic_id) << 24;
 
@@ -745,7 +747,7 @@ auto inline send_init_sipi(u8 apic_id, u32 trampoline_address) -> void {
     delay_us(10 * 1000);
 
     // convert address to 4KB page vector; 0x8000 -> 0x08
-    auto vector = (trampoline_address >> 12) & 0xff;
+    auto const vector = (trampoline_address >> 12) & 0xff;
 
     // re-select target apic id
     apic.local[0x310 / 4] = u32(apic_id) << 24;
@@ -782,9 +784,9 @@ auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
-    auto protected_mode_pml4 = ptr<u64>(0x1'0000);
-    auto protected_mode_pdpt = ptr<u64>(0x1'1000);
-    auto protected_mode_pd = ptr<u64>(0x1'2000);
+    auto* protected_mode_pml4 = ptr<u64>(0x1'0000);
+    auto* protected_mode_pdpt = ptr<u64>(0x1'1000);
+    auto* protected_mode_pd = ptr<u64>(0x1'2000);
 
     memset(protected_mode_pml4, 0, 4096);
     memset(protected_mode_pdpt, 0, 4096);
@@ -806,26 +808,28 @@ auto inline init_cores() {
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
         // usually the bsp has apic id 0, but check specifically
-        auto bsp_id = (apic.local[0x020 / 4] >> 24) & 0xff;
+        auto const bsp_id = (apic.local[0x020 / 4] >> 24) & 0xff;
         if (cores[i].apic_id == bsp_id) {
             continue;
         }
 
         // allocate a unique stack for this specific core
-        auto stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
-        auto stack_top = uptr(stack) + 4096;
+        auto const stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
+        auto const stack_top =
+            uptr(stack) + config::CORE_STACK_SIZE_PAGES * 4096;
 
         // prepare the trampoline with the target function
         // calculate size using the addresses of the labels
-        auto start_addr = uptr(kernel_asm_run_core_start);
-        auto code_size = uptr(kernel_asm_run_core_end) - start_addr;
+        auto const start_addr = uptr(kernel_asm_run_core_start);
+        auto const code_size = uptr(kernel_asm_run_core_end) - start_addr;
 
         // copy the trampoline code to lower 1MB so real mode can run it
         memcpy(ptr<void>(TRAMPOLINE_DEST), kernel_asm_run_core_start,
                code_size);
 
         // calculate the offset of the config data relative to the start
-        auto config_offset = uptr(kernel_asm_run_core_config) - start_addr;
+        auto const config_offset =
+            uptr(kernel_asm_run_core_config) - start_addr;
 
         // define struct
         struct [[gnu::packed]] TrampolineConfig {
@@ -834,7 +838,7 @@ auto inline init_cores() {
             uptr task;
             uptr long_mode_pml4;
         };
-        auto config = ptr<TrampolineConfig>(TRAMPOLINE_DEST + config_offset);
+        auto* config = ptr<TrampolineConfig>(TRAMPOLINE_DEST + config_offset);
 
         // fill the values
         config->protected_mode_pml4 = uptr(protected_mode_pml4);

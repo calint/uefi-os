@@ -26,6 +26,18 @@ template <typename T> auto inline ptr(uptr p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
+template <typename T> auto ptr_offset(void const* p, u64 bytes) -> T const* {
+    return ptr<T>(uptr(p) + bytes);
+}
+
+template <typename T> auto ptr_offset(void* p, u64 bytes) -> T* {
+    return ptr<T>(uptr(p) + bytes);
+}
+
+template <typename T> auto ptr_offset(uptr p, u64 bytes) -> T* {
+    return ptr<T>(p + bytes);
+}
+
 // concepts
 
 template <typename T, typename U>

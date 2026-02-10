@@ -24,13 +24,10 @@
 
 * if possible, declare `auto` being the first word in a declaration
   * applies to functions, inline, constexpr, const etc
-  * do not differentiate pointer signature, e.g. `auto*`
-  * have to differentiate reference signature, e.g. `auto&`
-* trailing return type on functions
 * `nullptr` declarations are done in non-auto way due to syntax noise
+* trailing return type on functions
 * use prefix increments
-* although anything that can be `const` should be declared as such, it
-  introduces "noise", sparsely used
+* everything that can be `const` declared as such
 * private class members suffixed with `_`
 
 ## repository

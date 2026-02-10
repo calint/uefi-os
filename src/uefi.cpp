@@ -10,10 +10,10 @@ auto constexpr MAX_CORES = 256u;
 // efi guid comparison
 // performs a robust byte-by-byte comparison of two efi guids
 auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
-    // casting to u8* (byte pointer) ensures we ignore structural padding
+    // casting to u8* (byte pointer) ensures to ignore structural padding
     // and avoids potential alignment faults on strict architectures
-    auto p1 = ptr<u8 const>(g1);
-    auto p2 = ptr<u8 const>(g2);
+    auto const* p1 = ptr<u8 const>(g1);
+    auto const* p2 = ptr<u8 const>(g2);
 
     for (auto i = 0u; i < sizeof(EFI_GUID); ++i) {
         if (p1[i] != p2[i]) {
@@ -24,14 +24,11 @@ auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     return true;
 }
 
-// type-safe pointer arithmetic
-template <typename T> auto ptr_offset(void* p, u64 bytes) -> T* {
-    return ptr<T>(uptr(p) + bytes);
-}
-
 // uefi console output
 // high-level wrapper for the uefi boot-time text console
-auto inline console_print(EFI_SYSTEM_TABLE* sys, char16_t const* s) -> void {
+auto inline console_print(EFI_SYSTEM_TABLE const* sys, char16_t const* s)
+    -> void {
+
     sys->ConOut->OutputString(sys->ConOut,
                               ptr<CHAR16>(const_cast<char16_t*>(s)));
 }
@@ -45,14 +42,14 @@ auto inline console_print(EFI_SYSTEM_TABLE* sys, char16_t const* s) -> void {
 // - failure == abort, no recovery paths
 
 // the uefi entry point
-extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
-    -> EFI_STATUS {
+extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
+                                EFI_SYSTEM_TABLE const* sys) -> EFI_STATUS {
 
     sys->ConOut->ClearScreen(sys->ConOut);
 
     console_print(sys, u"efi_main\n");
 
-    auto bs = sys->BootServices;
+    auto const* bs = sys->BootServices;
 
     //
     // get frame buffer config
@@ -60,7 +57,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
 
     // locate the gop (graphics output protocol) to get a linear frame buffer
     auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
-    auto gop = static_cast<EFI_GRAPHICS_OUTPUT_PROTOCOL*>(nullptr);
+    EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
     if (bs->LocateProtocol(&graphics_guid, nullptr, ptr<void*>(&gop)) !=
         EFI_SUCCESS) {
         console_print(sys, u"abort: failed to get frame buffer\n");
@@ -117,19 +114,18 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
         u32 creator_id;
         u32 creator_revision;
     };
-    auto xsdt = ptr<SDTHeader>(rsdp->xsdt_address);
+    auto const* xsdt = ptr<SDTHeader>(rsdp->xsdt_address);
 
     // calculate number of pointers in xsdt
-    auto entries = (xsdt->length - sizeof(SDTHeader)) / sizeof(u64);
-    auto ptrs = ptr_offset<u64>(xsdt, sizeof(SDTHeader));
+    auto const entries = (xsdt->length - sizeof(SDTHeader)) / sizeof(u64);
+    auto const* ptrs = ptr_offset<u64>(xsdt, sizeof(SDTHeader));
 
     // retrieve i/o apics in the system
     // find keyboard and get gsi and flags
 
     // default system configuration
     kernel::keyboard_config = {.gsi = 1u, .flags = 0u};
-    kernel::apic = {.io = ptr<u32 volatile>(0xfec00000),
-                    .local = ptr<u32 volatile>(0xfee00000)};
+    kernel::apic = {.io = ptr<u32>(0xfec00000), .local = ptr<u32>(0xfee00000)};
 
     // i/o apics found in the system (most systems < 8)
     struct [[gnu::packed]] MADT_IOAPIC {
@@ -146,7 +142,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // find apic values and keyboard configuration
     // parse the madt (multiple apic description table) to route interrupts
     for (auto i = 0u; i < entries; ++i) {
-        auto header = ptr<SDTHeader>(ptrs[i]);
+        auto const* header = ptr<SDTHeader>(ptrs[i]);
         auto constexpr APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
         // signature compare (x86 little-endian)
         if (*ptr<u32>(header->signature) == APIC_SIGNATURE) {
@@ -158,18 +154,18 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                 u32 flags;
                 u8 entries[];
             };
-            auto madt = ptr<MADT>(header);
+            auto const* madt = ptr<MADT>(header);
 
-            kernel::apic.local = ptr<u32 volatile>(madt->lapic_address);
+            kernel::apic.local = ptr<u32>(madt->lapic_address);
 
-            auto curr = madt->entries;
-            auto end = ptr_offset<u8>(madt, madt->header.length);
+            auto const* curr = madt->entries;
+            auto const* end = ptr_offset<u8>(madt, madt->header.length);
             while (curr < end) {
                 struct [[gnu::packed]] MADT_EntryHeader {
                     u8 type;
                     u8 length;
                 };
-                auto entry = ptr<MADT_EntryHeader>(curr);
+                auto const* entry = ptr<MADT_EntryHeader>(curr);
 
                 switch (entry->type) {
 
@@ -181,7 +177,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         u8 apic_id; // id used to target the core via ipi
                         u32 flags;  // bit 0: enabled, bit 1: online capable
                     };
-                    auto core = ptr<MADT_LAPIC>(curr);
+                    auto const* core = ptr<MADT_LAPIC>(curr);
                     if (core->flags & 0x03) { // if enabled or online capable
                         kernel::cores[kernel::core_count] = {.apic_id =
                                                                  core->apic_id};
@@ -213,7 +209,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         u32 gsi;   // the global system interrupt (io apic pin)
                         u16 flags; // polarity and trigger mode
                     };
-                    auto iso = ptr<MADT_ISO>(curr);
+                    auto const* iso = ptr<MADT_ISO>(curr);
 
                     // check for keyboard irq
                     if (iso->source == 1) {
@@ -240,7 +236,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
                         u16 res;
                         u64 address;
                     };
-                    auto lapic = ptr<MADT_LAPIC_Override>(curr);
+                    auto const* lapic = ptr<MADT_LAPIC_Override>(curr);
                     kernel::apic.local = ptr<u32 volatile>(lapic->address);
                     break;
                 }
@@ -259,7 +255,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE img, EFI_SYSTEM_TABLE* sys)
     // select ioapic with highest gsi_base <= keyboard gsi
     for (auto i = 0u; i < io_apic_count; ++i) {
         if (kernel::keyboard_config.gsi >= io_apics[i].gsi_base) {
-            kernel::apic.io = ptr<u32 volatile>(io_apics[i].address);
+            kernel::apic.io = ptr<u32>(io_apics[i].address);
             // note: in a true multi-apic system, check (gsi_base +
             //       max_interrupts)
         }
