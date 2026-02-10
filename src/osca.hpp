@@ -6,14 +6,8 @@
 
 namespace osca {
 
-template <typename T, typename U>
-concept is_same = __is_same(T, U);
-
 template <typename T>
-concept is_trivially_copyable = __is_trivially_copyable(T);
-
-template <typename T>
-concept is_job = is_trivially_copyable<T> && requires(T t) {
+concept is_job = requires(T t) {
     { t.run() } -> is_same<void>;
 };
 
@@ -85,7 +79,7 @@ template <u32 QueueSize = 256> class Jobs final {
     //   true if job placed in queue
     //   false if queue was full
     template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
-        static_assert(sizeof(T) <= JOB_SIZE);
+        static_assert(sizeof(T) <= JOB_SIZE, "job too large for queue slot");
 
         auto& entry = queue_[head_ % QueueSize];
 
@@ -97,7 +91,11 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // prepare slot
         new (entry.data) T{fwd<Args>(args)...};
-        entry.func = [](void* data) { ptr<T>(data)->run(); };
+        entry.func = [](void* data) {
+            auto p = ptr<T>(data);
+            p->run();
+            p->~T();
+        };
         ++head_;
 
         // hand over the slot to be run
@@ -110,7 +108,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // blocks while queue is full
     template <is_job T, typename... Args> auto add(Args&&... args) -> void {
-        while (!try_add<T>(args...)) {
+        while (!try_add<T>(fwd<Args>(args)...)) {
             kernel::core::pause();
         }
     }

@@ -44,3 +44,11 @@ template <typename T>
 auto constexpr fwd(typename remove_reference<T>::type& t) noexcept -> T&& {
     return static_cast<T&&>(t);
 }
+
+// concepts
+
+template <typename T, typename U>
+concept is_same = __is_same(T, U);
+
+template <typename T>
+concept is_trivially_copyable = __is_trivially_copyable(T);
