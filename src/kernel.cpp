@@ -174,21 +174,6 @@ auto make_heap() -> Heap {
     return {ptr<void>(aligned_start), aligned_size};
 }
 
-// pops a zeroed 4k buffer from the heap for structural paging
-auto allocate_page() -> void* {
-    // ensure heap has at least one 4k page remaining
-    if (heap.size < 4096) {
-        serial::print("error: out of memory for paging\n");
-        panic(0xff'00'00'00); // red screen: fatal
-    }
-
-    auto* p = heap.start;
-    heap.start = ptr_offset<void>(heap.start, 4096);
-    heap.size -= 4096;
-    memset(p, 0, 4096);
-    return p;
-}
-
 // pops zeroed pages
 auto allocate_pages(u64 const num_pages) -> void* {
     auto const bytes = num_pages * 4096;
@@ -213,7 +198,7 @@ auto get_next_table(u64* table, u64 index) -> u64* {
     // check bit 0 (p): present
     if (!(table[index] & 0x01)) {
         // create next level only when needed
-        auto const* next = allocate_page(); // zeroed 4KB chunk
+        auto const* next = allocate_pages(1); // zeroed 4KB chunk
         // link new table: set physical address and flags
         // 0x03: present | writable
         table[index] = uptr(next) | 0x03;
@@ -336,8 +321,8 @@ auto init_paging() -> void {
     // parse uefi memory map to identity-map system ram and firmware regions
     auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
-    auto total_mem_B = u64(0);
-    auto free_mem_B = u64(0);
+    auto total_mem_B = 0ull;
+    auto free_mem_B = 0ull;
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             desc, i * memory_map.descriptor_size);
@@ -446,7 +431,7 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
 
     // polling pit status via read-back command (0xe2)
     // bit 7 is set when the pit terminal count is reached (10ms elapsed)
-    auto status = 0;
+    auto status = 0u;
     while (!(status & 0x80)) {
         outb(0x43, 0xe2); // read-back status for ch0
         status = inb(0x40);
@@ -693,7 +678,7 @@ auto delay_us(u64 const us) -> void {
     auto constexpr pit_base_freq = 1'193'182u;
 
     // calculate how many pit ticks are required for the requested microseconds.
-    auto ticks = u32((us * pit_base_freq) / 1'000'000);
+    auto ticks = (us * pit_base_freq) / 1'000'000;
 
     // the pit counter is only 16-bit (max 65535).
     // 65535 ticks at 1.19mhz is roughly 55ms.
@@ -726,6 +711,7 @@ auto delay_us(u64 const us) -> void {
 
         // stop the gate and decrement our total tick count.
         outb(0x61, port_61 & ~1);
+
         ticks -= current_batch;
     }
 }

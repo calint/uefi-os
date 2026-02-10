@@ -56,7 +56,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     //
 
     // locate the gop (graphics output protocol) to get a linear frame buffer
-    auto graphics_guid = EFI_GUID(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID);
+    EFI_GUID graphics_guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = nullptr;
     if (bs->LocateProtocol(&graphics_guid, nullptr, ptr<void*>(&gop)) !=
         EFI_SUCCESS) {
@@ -88,7 +88,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
         u8 reserved[3];
     };
     RSDP* rsdp = nullptr;
-    auto acpi_20_guid = EFI_GUID(ACPI_20_TABLE_GUID);
+    EFI_GUID acpi_20_guid = ACPI_20_TABLE_GUID;
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
         if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
                         &acpi_20_guid)) {
@@ -265,10 +265,10 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     // get memory map, exit boot services and start kernel
     //
 
-    auto size = UINTN(0);
-    auto key = UINTN(0);
-    auto descriptor_size = UINTN(0);
-    auto descriptor_ver = UINT32(0);
+    UINTN size = 0;
+    UINTN key = 0;
+    UINTN descriptor_size = 0;
+    UINT32 descriptor_ver = 0;
 
     // calculate how many bytes needed to store the system memory map
     bs->GetMemoryMap(&size, nullptr, &key, &descriptor_size, &descriptor_ver);
