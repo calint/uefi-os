@@ -3,7 +3,9 @@
 
 namespace {
 
-auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
+auto draw_rect(u32 const x, u32 const y, u32 const width, u32 const height,
+               u32 const color) -> void {
+
     for (auto i = y; i < y + height; ++i) {
         for (auto j = x; j < x + width; ++j) {
             kernel::frame_buffer.pixels[i * kernel::frame_buffer.stride + j] =
@@ -12,7 +14,9 @@ auto draw_rect(u32 x, u32 y, u32 width, u32 height, u32 color) -> void {
     }
 }
 
-auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
+auto draw_char(u32 const col, u32 const row, u32 const color, char c,
+               u32 const scale = 1) -> void {
+
     auto fb = kernel::frame_buffer.pixels;
     auto stride = kernel::frame_buffer.stride;
     if (c < 32 || c > 126) {
@@ -30,15 +34,17 @@ auto draw_char(u32 col, u32 row, u32 color, char c, u32 scale = 1) -> void {
 }
 
 // Update print_string to pass the scale
-auto print_string(u32 col, u32 row, u32 color, char const* str, u32 scale = 1)
-    -> void {
+auto print_string(u32 const col, u32 const row, u32 const color,
+                  char const* str, u32 const scale = 1) -> void {
+
     for (auto i = 0u; str[i] != '\0'; ++i) {
         draw_char(col + i, row, color, str[i], scale);
     }
 }
 
-auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
-    constexpr char hex_chars[]{"0123456789ABCDEF"};
+auto print_hex(u32 col, u32 const row, u32 const color, u64 const val,
+               u32 const scale = 1) -> void {
+    char constexpr hex_chars[]{"0123456789ABCDEF"};
     for (auto i = 60; i >= 0; i -= 4) {
         draw_char(col, row, color, hex_chars[(val >> i) & 0xf], scale);
         col++;
@@ -50,9 +56,10 @@ auto print_hex(u32 col, u32 row, u32 color, u64 val, u32 scale = 1) -> void {
 }
 
 // prevent optimization so we actually see instructions in the binary
-auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
-    -> void {
-    for (int i = 0; i < count; ++i) {
+auto __attribute__((noinline)) simd_example(f32* dest, f32 const* src,
+                                            const u32 count) -> void {
+
+    for (auto i = 0u; i < count; ++i) {
         // Simple float math: multiply and add
         // This will typically generate MOVSS/ADDSS (scalar) or MOVAPS/ADDPS
         // (packed)
@@ -63,8 +70,8 @@ auto __attribute__((noinline)) simd_example(float* dest, float* src, int count)
 auto test_simd_support() -> void {
     kernel::serial::print("  test simd: ");
 
-    alignas(16) float input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
-    alignas(16) float output[4] = {0.0f};
+    alignas(16) f32 input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
+    alignas(16) f32 output[4] = {0.0f};
 
     // run the math
     simd_example(output, input, 4);
@@ -72,12 +79,12 @@ auto test_simd_support() -> void {
     // validate the result for the first element: (1.0 * 1.5) + 2.0 = 3.5
     // we cast to int for simple printing since we might not have a
     // float-to-string yet
-    auto colr = u32(0);
+    u32 colr = 0;
     if (int(output[0]) == 3 && int(output[0] * 10) % 10 == 5) {
-        colr = 0x0000ff00;
+        colr = 0x00'00'ff'00;
         kernel::serial::print("ok\n");
     } else {
-        colr = 0x00ff0000;
+        colr = 0x00'ff'00'00;
         kernel::serial::print("failed\n");
     }
     draw_rect(600u, 400u, 20u, 20u, colr);
