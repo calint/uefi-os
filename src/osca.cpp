@@ -102,7 +102,7 @@ namespace osca {
     auto di = kernel::frame_buffer.pixels;
     for (auto i = 0u;
          i < kernel::frame_buffer.stride * kernel::frame_buffer.height; ++i) {
-        *di = 0x00000022;
+        *di = 0x00'00'00'22;
         ++di;
     }
     auto col_lbl = 1u;
