@@ -50,10 +50,10 @@ template <u32 QueueSize = 256> class Jobs final {
     // producer reads and writes
     alignas(kernel::core::CACHE_LINE_SIZE) u32 head_;
 
-    // consumers atomically modify
+    // consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
 
-    // producer atomically reads, consumers atomically writes
+    // producer atomically reads, consumers atomically write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
