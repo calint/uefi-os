@@ -15,11 +15,11 @@ using f64 = double;
 // short hands for `reinterpret_cast`
 
 template <typename T> auto inline ptr(void* p) -> T* {
-    return reinterpret_cast<T*>(p);
+    return static_cast<T*>(p);
 }
 
 template <typename T> auto inline ptr(void const* p) -> T const* {
-    return reinterpret_cast<T const*>(p);
+    return static_cast<T const*>(p);
 }
 
 template <typename T> auto inline ptr(uptr p) -> T* {
