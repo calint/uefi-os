@@ -147,13 +147,13 @@ auto make_heap() -> Heap {
     auto aligned_size = 0ull;
 
     // parse uefi memory descriptors
-    auto desc = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto num_descriptors = memory_map.size / memory_map.descriptor_size;
 
     for (auto i = 0u; i < num_descriptors; ++i) {
         // step by uefi-defined descriptor size
-        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            u64(desc) + (i * memory_map.descriptor_size));
+        auto d = ptr<EFI_MEMORY_DESCRIPTOR>(uptr(desc) +
+                                            (i * memory_map.descriptor_size));
 
         // usable ram not reserved by firmware/acpi
         if (d->Type == EfiConventionalMemory) {
@@ -171,7 +171,7 @@ auto make_heap() -> Heap {
         }
     }
 
-    return {reinterpret_cast<void*>(aligned_start), aligned_size};
+    return {ptr<void>(aligned_start), aligned_size};
 }
 
 // pops a zeroed 4k buffer from the heap for structural paging
@@ -182,11 +182,11 @@ auto allocate_page() -> void* {
         panic(0xff'00'00'00); // red screen: fatal
     }
 
-    auto ptr = heap.start;
-    heap.start = reinterpret_cast<void*>(u64(heap.start) + 4096);
+    auto p = heap.start;
+    heap.start = ptr<void>(uptr(heap.start) + 4096);
     heap.size -= 4096;
-    memset(ptr, 0, 4096);
-    return ptr;
+    memset(p, 0, 4096);
+    return p;
 }
 
 // pops zeroed pages
@@ -216,11 +216,11 @@ auto get_next_table(u64* table, u64 index) -> u64* {
         void* next = allocate_page(); // zeroed 4KB chunk
         // link new table: set physical address and flags
         // 0x03: present | writable
-        table[index] = reinterpret_cast<uptr>(next) | 0x03;
+        table[index] = uptr(next) | 0x03;
     }
     // mask lower 12 bits: remove flags to get pure physical address
     // x64 paging structures are always 4k aligned
-    return reinterpret_cast<u64*>(table[index] & ~0xfffull);
+    return ptr<u64>(table[index] & ~0xfffull);
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
@@ -337,8 +337,8 @@ auto init_paging() -> void {
     auto total_mem_B = u64(0);
     auto free_mem_B = u64(0);
     for (auto i = 0u; i < num_descriptors; ++i) {
-        auto d = reinterpret_cast<EFI_MEMORY_DESCRIPTOR*>(
-            u64(desc) + (i * memory_map.descriptor_size));
+        auto d = ptr<EFI_MEMORY_DESCRIPTOR>(u64(desc) +
+                                            (i * memory_map.descriptor_size));
 
         if ((d->Type == EfiACPIReclaimMemory) ||
             (d->Type == EfiACPIMemoryNVS)) {
@@ -782,9 +782,9 @@ auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
-    auto protected_mode_pml4 = reinterpret_cast<u64*>(0x1'0000);
-    auto protected_mode_pdpt = reinterpret_cast<u64*>(0x1'1000);
-    auto protected_mode_pd = reinterpret_cast<u64*>(0x1'2000);
+    auto protected_mode_pml4 = ptr<u64>(0x1'0000);
+    auto protected_mode_pdpt = ptr<u64>(0x1'1000);
+    auto protected_mode_pd = ptr<u64>(0x1'2000);
 
     memset(protected_mode_pml4, 0, 4096);
     memset(protected_mode_pdpt, 0, 4096);
@@ -813,7 +813,7 @@ auto inline init_cores() {
 
         // allocate a unique stack for this specific core
         auto stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
-        auto stack_top = reinterpret_cast<uptr>(stack) + 4096;
+        auto stack_top = uptr(stack) + 4096;
 
         // prepare the trampoline with the target function
         // calculate size using the addresses of the labels
@@ -821,8 +821,8 @@ auto inline init_cores() {
         auto code_size = uptr(kernel_asm_run_core_end) - start_addr;
 
         // copy the trampoline code to lower 1MB so real mode can run it
-        memcpy(reinterpret_cast<void*>(TRAMPOLINE_DEST),
-               kernel_asm_run_core_start, code_size);
+        memcpy(ptr<void>(TRAMPOLINE_DEST), kernel_asm_run_core_start,
+               code_size);
 
         // calculate the offset of the config data relative to the start
         auto config_offset = uptr(kernel_asm_run_core_config) - start_addr;
@@ -834,8 +834,7 @@ auto inline init_cores() {
             uptr task;
             uptr long_mode_pml4;
         };
-        auto config = reinterpret_cast<TrampolineConfig*>(TRAMPOLINE_DEST +
-                                                          config_offset);
+        auto config = ptr<TrampolineConfig>(TRAMPOLINE_DEST + config_offset);
 
         // fill the values
         config->protected_mode_pml4 = uptr(protected_mode_pml4);
