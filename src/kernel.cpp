@@ -27,7 +27,7 @@ alignas(16) static u8 kernel_stack[4096];
     // infinite loop so the hardware doesn't reboot
     asm volatile("cli");
     while (true) {
-        asm("hlt");
+        asm volatile("hlt");
     }
 }
 
@@ -85,7 +85,7 @@ auto inline init_sse() -> void {
     //  7-12 masks  set to 1 to ignore corresponding error
     // 13-14 rc     rounding control (00: nearest, 01: down, 10: up, 11: zero)
     //    15 ftz    flush to zero (treat tiny results as 0)
-    u32 mxcsr = 0x1f80 | (1 << 15u);
+    auto mxcsr = 0x1f80u | (1 << 15u);
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
@@ -153,7 +153,7 @@ auto make_heap() -> Heap {
     for (auto i = 0u; i < num_descriptors; ++i) {
         // step by uefi-defined descriptor size
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
-            uptr(desc), (i * memory_map.descriptor_size));
+            uptr(desc), i * memory_map.descriptor_size);
 
         // usable ram not reserved by firmware/acpi
         if (d->Type == EfiConventionalMemory) {
@@ -258,7 +258,9 @@ auto constexpr USE_PAT_WC = (1ull << 12);
 
 // range mapping with hybrid page sizes
 // creates identity mappings with optimized page sizes
-auto inline map_range(u64 const phys, u64 const size, u64 const flags) -> void {
+auto inline map_range(uptr const phys, u64 const size, u64 const flags)
+    -> void {
+
     // page alignment: floor start and ceil end to 4kb boundaries
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
@@ -332,23 +334,22 @@ auto init_paging() -> void {
     auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
 
     // parse uefi memory map to identity-map system ram and firmware regions
-    auto const* desc = static_cast<EFI_MEMORY_DESCRIPTOR*>(memory_map.buffer);
+    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     auto total_mem_B = u64(0);
     auto free_mem_B = u64(0);
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
-            desc, (i * memory_map.descriptor_size));
+            desc, i * memory_map.descriptor_size);
 
-        if ((d->Type == EfiACPIReclaimMemory) ||
-            (d->Type == EfiACPIMemoryNVS)) {
+        if (d->Type == EfiACPIReclaimMemory || d->Type == EfiACPIMemoryNVS) {
             // acpi tables: must be mapped to parse hardware config later
             // serial::print("* acpi tables\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
-        } else if ((d->Type == EfiLoaderCode) || (d->Type == EfiLoaderData) ||
-                   (d->Type == EfiBootServicesCode) ||
-                   (d->Type == EfiBootServicesData)) {
+        } else if (d->Type == EfiLoaderCode || d->Type == EfiLoaderData ||
+                   d->Type == EfiBootServicesCode ||
+                   d->Type == EfiBootServicesData) {
             // kernel binary + current uefi stack
             // note: EfiBootServiceCode and Data is mapped because current stack
             //       is there
@@ -392,13 +393,13 @@ auto init_paging() -> void {
 
     // serial::print("* apic mmio\n");
     // map apic registers for interrupt handling
-    map_range(u64(apic.io), 0x1000, MMIO_FLAGS);
-    map_range(u64(apic.local), 0x1000, MMIO_FLAGS);
+    map_range(uptr(apic.io), 0x1000, MMIO_FLAGS);
+    map_range(uptr(apic.local), 0x1000, MMIO_FLAGS);
 
     // serial::print("* frame buffer\n");
     // map frame buffer with write-combining (pat index 4)
     auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
-    map_range(u64(frame_buffer.pixels),
+    map_range(uptr(frame_buffer.pixels),
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
 
@@ -511,7 +512,7 @@ auto inline init_keyboard() -> void {
     // flush: clear the output buffer (port 0x60) of any stale data
     // check status register (port 0x64) bit 0 (output buffer full)
     auto flush_count = 0u;
-    while (inb(0x64) & 0x01) {
+    while (inb(0x64) & 1) {
         inb(0x60);
         if (++flush_count > 100) {
             serial::print("  flush timeout\n");
@@ -522,7 +523,7 @@ auto inline init_keyboard() -> void {
     // wait for controller: check bit 1 (input buffer full)
     // cannot send commands until this bit is 0
     auto wait_count = 0u;
-    while (inb(0x64) & 0x02) {
+    while (inb(0x64) & 2) {
         if (++wait_count > 100000) {
             serial::print("  controller timeout\n");
             return;
@@ -537,7 +538,7 @@ auto inline init_keyboard() -> void {
     // diagnostic: wait for 0xfa (acknowledge) from the keyboard
     auto ack_received = false;
     for (auto i = 0u; i < 1'000'000; ++i) {
-        if (inb(0x64) & 0x01) {
+        if (inb(0x64) & 1) {
             auto const response = inb(0x60);
             if (response == 0xfa) {
                 serial::print("  ack\n");
@@ -605,7 +606,7 @@ auto inline init_idt() -> void {
 extern "C" auto kernel_on_keyboard() -> void {
     // drain ps/2 output buffer: bit 0 of status (0x64) means data is waiting
     // reading all pending bytes prevents the controller from getting "stuck"
-    while (inb(0x64) & 0x01) {
+    while (inb(0x64) & 1) {
         // read raw byte from data port
         auto const scancode = inb(0x60);
 
@@ -715,7 +716,7 @@ auto delay_us(u64 const us) -> void {
         auto port_61 = inb(0x61);
 
         // ensure speaker (bit 1) is off, gate (bit 0) is on.
-        outb(0x61, (port_61 & ~0x02) | 0x01);
+        outb(0x61, (port_61 & ~2) | 1);
 
         // poll bit 5 of port 0x61
         // this bit goes high when the pit counter hits zero
@@ -724,7 +725,7 @@ auto delay_us(u64 const us) -> void {
         }
 
         // stop the gate and decrement our total tick count.
-        outb(0x61, port_61 & ~0x01);
+        outb(0x61, port_61 & ~1);
         ticks -= current_batch;
     }
 }
@@ -838,7 +839,8 @@ auto inline init_cores() {
             uptr task;
             uptr long_mode_pml4;
         };
-        auto* config = ptr<TrampolineConfig>(TRAMPOLINE_DEST + config_offset);
+        auto* config =
+            ptr_offset<TrampolineConfig>(TRAMPOLINE_DEST, config_offset);
 
         // fill the values
         config->protected_mode_pml4 = uptr(protected_mode_pml4);

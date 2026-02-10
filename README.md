@@ -29,6 +29,7 @@
 * use prefix increments
 * everything that can be `const` declared as such
 * private class members suffixed with `_`
+* right to left type notation, e.g. `auto const* ptr`
 
 ## repository
 
