@@ -157,9 +157,9 @@ extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
     return original_dest;
 }
 
-// allow new in place
+// allow in place new and delete
 auto inline operator new(size_t, void* p) noexcept -> void* { return p; }
-
 auto inline operator delete(void*, void*) noexcept -> void {}
 
+// allow delete (must not be inline according to standard)
 auto operator delete(void*, size_t) noexcept -> void;
