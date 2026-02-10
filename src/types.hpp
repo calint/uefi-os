@@ -52,3 +52,9 @@ concept is_same = __is_same(T, U);
 
 template <typename T>
 concept is_trivially_copyable = __is_trivially_copyable(T);
+
+template <typename T>
+concept is_destructible = __is_destructible(T);
+
+template <typename T>
+concept is_constructible = __is_constructible(T, T const&);

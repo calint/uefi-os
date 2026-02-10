@@ -7,7 +7,7 @@
 namespace osca {
 
 template <typename T>
-concept is_job = requires(T t) {
+concept is_job = is_destructible<T> && requires(T t) {
     { t.run() } -> is_same<void>;
 };
 
