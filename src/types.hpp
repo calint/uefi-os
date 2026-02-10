@@ -54,7 +54,7 @@ template <typename T>
 concept is_trivially_copyable = __is_trivially_copyable(T);
 
 template <typename T>
-concept is_destructible = __is_destructible(T);
+concept is_constructible = __is_constructible(T, T const&);
 
 template <typename T>
-concept is_constructible = __is_constructible(T, T const&);
+concept is_destructible = __is_destructible(T);
