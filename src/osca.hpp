@@ -7,8 +7,8 @@
 namespace osca {
 
 template <typename T>
-concept is_job = requires(T* t) {
-    { t->run() } -> is_same<void>;
+concept is_job = requires(T& t) {
+    { t.run() } -> is_same<void>;
 };
 
 //

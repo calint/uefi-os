@@ -161,3 +161,5 @@ extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
 auto inline operator new(size_t, void* p) noexcept -> void* { return p; }
 
 auto inline operator delete(void*, void*) noexcept -> void {}
+
+auto operator delete(void*, size_t) noexcept -> void;

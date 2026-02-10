@@ -891,3 +891,5 @@ auto inline init_cores() {
 
 // required by msvc/clang abi when floating-point arithmetic is used
 extern "C" i32 _fltused = 0;
+
+auto operator delete(void*, size_t) noexcept -> void {}
