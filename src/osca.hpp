@@ -7,8 +7,8 @@
 namespace osca {
 
 template <typename T>
-concept is_job = is_destructible<T> && requires(T t) {
-    { t.run() } -> is_same<void>;
+concept is_job = requires(T* t) {
+    { t->run() } -> is_same<void>;
 };
 
 //
@@ -38,6 +38,7 @@ template <u32 QueueSize = 256> class Jobs final {
         Func func;
         u32 sequence;
         u32 padding;
+        // note: pad so func remains 8-byte aligned and sequence 4-byte aligned
     };
 
     static_assert(sizeof(Entry) == kernel::core::CACHE_LINE_SIZE);

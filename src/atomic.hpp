@@ -15,10 +15,6 @@ auto inline compare_exchange_acquire_relaxed(T* target, T* expected, T desired,
     );
 }
 
-template <typename T> auto inline add(T* target, T delta) -> void {
-    __atomic_fetch_add(target, delta, __ATOMIC_SEQ_CST);
-}
-
 template <typename T> auto inline add_release(T* target, T delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
 }

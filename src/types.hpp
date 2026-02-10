@@ -26,6 +26,29 @@ template <typename T> auto inline ptr(uptr p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
+// concepts
+
+template <typename T, typename U>
+concept is_same = __is_same(T, U);
+
+template <typename T>
+concept is_trivially_copyable = __is_trivially_copyable(T);
+
+template <typename T>
+concept is_constructible = __is_constructible(T);
+
+template <typename T>
+concept is_copy_constructible = __is_constructible(T, T const&);
+
+template <typename T>
+concept is_move_constructible = __is_constructible(T, T&&);
+
+template <typename T>
+concept is_destructible = __is_destructible(T);
+
+template <typename T>
+concept is_lvalue_reference = __is_lvalue_reference(T);
+
 // perfect forwarding
 
 template <typename T> struct remove_reference {
@@ -45,16 +68,8 @@ auto constexpr fwd(typename remove_reference<T>::type& t) noexcept -> T&& {
     return static_cast<T&&>(t);
 }
 
-// concepts
-
-template <typename T, typename U>
-concept is_same = __is_same(T, U);
-
 template <typename T>
-concept is_trivially_copyable = __is_trivially_copyable(T);
-
-template <typename T>
-concept is_constructible = __is_constructible(T, T const&);
-
-template <typename T>
-concept is_destructible = __is_destructible(T);
+auto constexpr fwd(typename remove_reference<T>::type&& t) noexcept -> T&& {
+    static_assert(!is_lvalue_reference<T>);
+    return static_cast<T&&>(t);
+}
