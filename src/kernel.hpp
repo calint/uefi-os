@@ -50,11 +50,11 @@ struct Heap {
 
 Heap inline heap;
 
-auto inline outb(u16 const port, u8 const val) -> void {
+auto constexpr inline outb(u16 const port, u8 const val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-auto inline inb(u16 const port) -> u8 {
+auto constexpr inline inb(u16 const port) -> u8 {
     u8 result;
     asm volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
     return result;
@@ -66,14 +66,14 @@ auto inline inb(u16 const port) -> u8 {
 
 namespace kernel::serial {
 
-auto inline print(char const* s) -> void {
+auto constexpr inline print(char const* s) -> void {
     while (*s) {
         outb(0x3f8, u8(*s));
         ++s;
     }
 }
 
-auto inline print_hex(u64 const val) -> void {
+auto constexpr inline print_hex(u64 const val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 60; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
@@ -83,7 +83,7 @@ auto inline print_hex(u64 const val) -> void {
     }
 }
 
-auto inline print_dec(u64 val) -> void {
+auto constexpr inline print_dec(u64 val) -> void {
     // case for zero
     if (val == 0) {
         outb(0x3f8, '0');
@@ -108,7 +108,7 @@ auto inline print_dec(u64 val) -> void {
     }
 }
 
-auto inline print_hex_byte(u8 const val) -> void {
+auto constexpr inline print_hex_byte(u8 const val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 4; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
@@ -122,10 +122,10 @@ namespace kernel::core {
 auto constexpr CACHE_LINE_SIZE = 64u;
 // note: almost all modern x86_64 processors (intel and amd)
 
-auto inline pause() -> void { __builtin_ia32_pause(); }
-auto inline interrupts_enable() -> void { asm volatile("sti"); }
-auto inline interrupts_disable() -> void { asm volatile("cli"); }
-auto inline halt() -> void { asm volatile("hlt"); }
+auto constexpr inline pause() -> void { __builtin_ia32_pause(); }
+auto constexpr inline interrupts_enable() -> void { asm volatile("sti"); }
+auto constexpr inline interrupts_disable() -> void { asm volatile("cli"); }
+auto constexpr inline halt() -> void { asm volatile("hlt"); }
 
 } // namespace kernel::core
 
@@ -150,21 +150,26 @@ extern "C" i32 _fltused;
 // built-in replacements
 //
 
-extern "C" auto inline memset(void* s, i32 const c, u64 n) -> void* {
+extern "C" auto constexpr inline memset(void* s, i32 const c, u64 n) -> void* {
     void* original_s = s;
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
     return original_s;
 }
 
-extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
+extern "C" auto constexpr inline memcpy(void* dest, void const* src, u64 count)
+    -> void* {
+
     void* original_dest = dest;
     asm volatile("rep movsb" : "+D"(dest), "+S"(src), "+c"(count) : : "memory");
     return original_dest;
 }
 
 // allow in place new and delete
-auto inline operator new(size_t, void* p) noexcept -> void* { return p; }
-auto inline operator delete(void*, void*) noexcept -> void {}
+auto constexpr inline operator new(size_t, void* p) noexcept -> void* {
+    return p;
+}
+
+auto constexpr inline operator delete(void*, void*) noexcept -> void {}
 
 // allow delete (must not be inline according to standard)
 auto operator delete(void*, size_t) noexcept -> void;
