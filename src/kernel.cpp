@@ -85,7 +85,7 @@ auto inline init_sse() -> void {
     //  7-12 masks  set to 1 to ignore corresponding error
     // 13-14 rc     rounding control (00: nearest, 01: down, 10: up, 11: zero)
     //    15 ftz    flush to zero (treat tiny results as 0)
-    auto mxcsr = 0x1f80u | (1 << 15u);
+    auto const mxcsr = 0x1f80u | (1 << 15u);
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
@@ -147,11 +147,11 @@ auto make_heap() -> Heap {
     auto aligned_size = 0ull;
 
     // parse uefi memory descriptors
-    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
+    auto const* const desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
         // step by uefi-defined descriptor size
-        auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
+        auto const* const d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             uptr(desc), i * memory_map.descriptor_size);
 
         // usable ram not reserved by firmware/acpi
@@ -183,7 +183,7 @@ auto allocate_pages(u64 const num_pages) -> void* {
         panic(0xff'ff'00'00); // red screen: fatal
     }
 
-    auto* p = heap.start;
+    auto* const p = heap.start;
     heap.start = ptr_offset<void>(heap.start, bytes);
     heap.size -= bytes;
     memset(p, 0, bytes);
@@ -197,7 +197,7 @@ auto get_next_table(u64* table, u64 const index) -> u64* {
     // check bit 0 (p): present
     if (!(table[index] & 0x01)) {
         // create next level only when needed
-        auto const* next = allocate_pages(1); // zeroed 4KB chunk
+        auto const* const next = allocate_pages(1); // zeroed 4KB chunk
         // link new table: set physical address and flags
         // 0x03: present | writable
         table[index] = uptr(next) | 3;
@@ -320,7 +320,7 @@ auto init_paging() -> void {
     // parse uefi memory map to identity-map system ram and firmware regions
     auto total_mem_B = 0ull;
     auto free_mem_B = 0ull;
-    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
+    auto const* const desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
@@ -392,8 +392,9 @@ auto init_paging() -> void {
     map_range(heap_start, heap_size, RAM_FLAGS);
 
     // serial::print("* trampoline\n");
-    // explicitly map the first 2MB as identity mapped (including 0x8000)
-    map_range(0x0, 0x20'0000, RAM_FLAGS);
+    // explicitly map the first 2MB as identity mapped (including trampoline at
+    // 0x8000 and paging 0x1'0000 to 0x1'3000')
+    map_range(0, 0x20'0000, RAM_FLAGS);
 
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
@@ -488,7 +489,8 @@ auto inline init_keyboard() -> void {
 
     // configure io-apic redirection table for keyboard (usually gsi 1)
     // index 0x10 is the start of the redirection table (2 x 32-bit registers
-    // per entry) low 32 bits: vector 33 | flags (trigger mode, polarity, etc.)
+    // per entry)
+    // low 32 bits: vector 33 | flags (trigger mode, polarity, etc.)
     io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
     // high 32 bits: destination field (sets which cpu receives the interrupt)
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
@@ -770,9 +772,9 @@ auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
-    auto* protected_mode_pml4 = ptr<u64>(0x1'0000);
-    auto* protected_mode_pdpt = ptr<u64>(0x1'1000);
-    auto* protected_mode_pd = ptr<u64>(0x1'2000);
+    auto* const protected_mode_pml4 = ptr<u64>(0x1'0000);
+    auto* const protected_mode_pdpt = ptr<u64>(0x1'1000);
+    auto* const protected_mode_pd = ptr<u64>(0x1'2000);
 
     memset(protected_mode_pml4, 0, 4096);
     memset(protected_mode_pdpt, 0, 4096);
