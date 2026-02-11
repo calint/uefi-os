@@ -545,10 +545,6 @@ auto inline init_keyboard() -> void {
     }
 }
 
-// callback assembler functions
-extern "C" auto kernel_asm_timer_handler() -> void;
-extern "C" auto kernel_asm_keyboard_handler() -> void;
-
 // idt (interrupt descriptor table) init
 auto inline init_idt() -> void {
     // 16-byte descriptor format for x86-64

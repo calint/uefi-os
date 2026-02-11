@@ -64,6 +64,10 @@ auto inline inb(u16 const port) -> u8 {
 
 } // namespace kernel
 
+// kernel callback assembler functions
+extern "C" auto kernel_asm_timer_handler() -> void;
+extern "C" auto kernel_asm_keyboard_handler() -> void;
+
 namespace kernel::serial {
 
 auto inline print(char const* s) -> void {
