@@ -15,8 +15,7 @@
 * acpi 2.0+
 * modern pc firmware
 * no legacy bios
-* no broken firmware tolerance
-* no broken hardware tolerance
+* no broken firmware or hardware tolerance
 * keyboard must be present and follow protocol
 * hardware assumed to have more than 1 thread
 * real-time system with all memory allocated up-front
