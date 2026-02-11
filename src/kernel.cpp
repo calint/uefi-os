@@ -230,10 +230,10 @@ auto constexpr PAGE_PS = (1ull << 7);
 // the pat bit is the "high bit" (bit 2) of the 3-bit pat index
 // its position changes based on the page size!
 
-// pat bit for 4kb ptes
+// pat bit for 4KB ptes
 auto constexpr PAGE_PAT_4KB = (1ull << 7);
 
-// pat bit for 2mb pdes
+// pat bit for 2MB pdes
 auto constexpr PAGE_PAT_2MB = (1ull << 12);
 
 // bit 12 in 'flags' parameter is a software-only signal that the caller wants
@@ -245,7 +245,7 @@ auto constexpr USE_PAT_WC = (1ull << 12);
 auto inline map_range(uptr const phys, u64 const size, u64 const flags)
     -> void {
 
-    // page alignment: floor start and ceil end to 4kb boundaries
+    // page alignment: floor start and ceil end to 4KB boundaries
     auto addr = phys & ~0xfffull;
     auto end = (phys + size + 4095) & ~0xfffull;
 
@@ -269,13 +269,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             // huge page: ps (page size) bit = 1 in page directory entry
             auto entry_flags = flags | PAGE_PS;
 
-            if (flags & USE_PAT_WC) {
-                // write-combining (index 4): binary 100
-                // for 2mb pages, pat bit is bit 12
-                entry_flags &= ~PAGE_PWT;
-                entry_flags &= ~PAGE_PCD;
-                entry_flags |= PAGE_PAT_2MB;
-            }
+            // note: write-combining bit USE_PAT_WC is same bit as PAGE_PAT_2MB
 
             pd[pd_idx] = addr | entry_flags;
             addr += 0x20'0000; // jump by 2MB
@@ -284,11 +278,10 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             auto* pt = get_next_table(pd, pd_idx);
             auto entry_flags = flags;
 
-            if (flags & USE_PAT_WC) {
+            if (entry_flags & USE_PAT_WC) {
                 // write-combining (index 4): binary 100
-                // for 4KB pages, pat bit is bit 7
-                entry_flags &= ~PAGE_PWT;
-                entry_flags &= ~PAGE_PCD;
+
+                // remove bit valid for 2MB pages and enable bit for 4KB page
                 entry_flags &= ~USE_PAT_WC;
                 entry_flags |= PAGE_PAT_4KB;
             }
@@ -306,7 +299,7 @@ auto init_paging() -> void {
     auto const heap_size = heap.size;
 
     // flag that is true after scanning memory if trampoline and protected mode
-    // pages are in conventional memory
+    // pages are in free memory
     auto trampoline_memory_is_free = false;
 
     // page attribute flags
@@ -328,7 +321,6 @@ auto init_paging() -> void {
 
         if (d->Type == EfiACPIReclaimMemory || d->Type == EfiACPIMemoryNVS) {
             // acpi tables: must be mapped to parse hardware config later
-            // serial::print("* acpi tables\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
         } else if (d->Type == EfiLoaderCode || d->Type == EfiLoaderData ||
@@ -336,13 +328,11 @@ auto init_paging() -> void {
                    d->Type == EfiBootServicesData) {
             // kernel binary + current uefi stack
             // note: EfiBootServiceCode and Data is mapped because current stack
-            //       is there
-            // serial::print("* loaded kernel and current stack\n");
+            //       is there for now
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
         } else if (d->Type == EfiConventionalMemory) {
             // general purpose ram
-            // serial::print("* memory\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
             free_mem_B += d->NumberOfPages * 4096;
@@ -353,7 +343,6 @@ auto init_paging() -> void {
             }
         } else if (d->Type == EfiMemoryMappedIO) {
             // generic hardware mmio regions
-            // serial::print("* mmio region\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
@@ -375,25 +364,21 @@ auto init_paging() -> void {
         panic(0x00'00'ff'ff);
     }
 
-    // serial::print("* apic mmio\n");
     // map apic registers for interrupt handling
     map_range(uptr(apic.io), 0x1000, MMIO_FLAGS);
     map_range(uptr(apic.local), 0x1000, MMIO_FLAGS);
 
-    // serial::print("* frame buffer\n");
     // map frame buffer with write-combining (pat index 4)
     auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(uptr(frame_buffer.pixels),
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
 
-    // serial::print("* heap\n");
-    // map the dynamic memory pool
+    // map the heap
     map_range(heap_start, heap_size, RAM_FLAGS);
 
-    // serial::print("* trampoline\n");
-    // explicitly map the first 2MB as identity mapped (including trampoline at
-    // 0x8000 and paging 0x1'0000 to 0x1'3000')
+    // explicitly map the first 2MB as identity mapped including trampoline at
+    // 0x8000 and page tables at 0x1'0000 to 0x1'3000'
     map_range(0, 0x20'0000, RAM_FLAGS);
 
     // config pat: set pa4 to write-combining (0x01)
@@ -405,12 +390,12 @@ auto init_paging() -> void {
     // pat index 4 (pa4): bits 32-34 of the 64-bit msr
     // 0x01: write-combining (wc) mode
     // wc is essential for framebuffers; it buffers writes to the gpu
-    high = (high & ~0x07u) | 1;
+    high = (high & ~7u) | 1;
 
     // wrmsr: write edx:eax back to ia32_pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
 
-    // PAT (Page Attribute Table) configured before CR3 activation; no cache
+    // pat (page attribute table) configured before cr3 activation; no cache
     // flush required
 
     // activate the new tables
@@ -436,6 +421,7 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
         outb(0x43, 0xe2); // read-back status for ch0
         status = inb(0x40);
     }
+
     // lapic current count register (0x390): read remaining ticks
     auto const current_count = apic.local[0x390 / 4];
     auto const ticks_per_10ms = 0xffff'ffff - current_count;
@@ -450,7 +436,7 @@ auto constexpr TIMER_VECTOR = 32u;
 // disables legacy pic and starts lapic timer in periodic mode
 auto inline init_timer() -> void {
     // disable legacy pic: mask all interrupts on master (0x21) and slave (0xa1)
-    // essential to prevent "spurious" interrupts from deprecated hardware
+    // essential to prevent spurious interrupts from deprecated hardware
     outb(0x21, 0xff);
     outb(0xa1, 0xff);
 
@@ -468,7 +454,7 @@ auto inline init_timer() -> void {
     apic.local[0x320 / 4] = (1 << 17) | TIMER_VECTOR;
 
     // icr (initial count register): set the countdown start value
-    // uses calibration logic to determine 2hz (0.5s interval)
+    // use calibration to determine value
     apic.local[0x380 / 4] = calibrate_apic(config::TIMER_FREQUENCY_HZ);
 }
 
@@ -476,11 +462,10 @@ auto inline init_timer() -> void {
 // writes to an io-apic register using the index/data window
 auto io_apic_write(u32 const reg, u32 const val) -> void {
     // ioregsel (offset 0x00): select the target register index
-    apic.io[0] = reg;
+    apic.io[0x000 / 4] = reg;
 
     // iowin (offset 0x10): write the 32-bit data to the selected register
-    // note: offset 0x10 is index [4] in a u32 array (4 * 4 bytes)
-    apic.io[4] = val; // write value
+    apic.io[0x010 / 4] = val; // write value
 }
 
 auto constexpr KEYBOARD_VECTOR = 33u;
@@ -492,8 +477,8 @@ auto inline init_keyboard() -> void {
     auto const cpu_id = (apic.local[0x020 / 4] >> 24) & 0xff;
 
     // configure io-apic redirection table for keyboard (usually gsi 1)
-    // index 0x10 is the start of the redirection table (2 x 32-bit registers
-    // per entry)
+    // index 0x10 is the start of the redirection table with 2 x 32-bit
+    // registers per entry
     // low 32 bits: vector | flags (trigger mode, polarity, etc.)
     io_apic_write(0x10 + keyboard_config.gsi * 2,
                   KEYBOARD_VECTOR | keyboard_config.flags);
@@ -502,23 +487,13 @@ auto inline init_keyboard() -> void {
 
     // flush: clear the output buffer (port 0x60) of any stale data
     // check status register (port 0x64) bit 0 (output buffer full)
-    auto flush_count = 0u;
     while (inb(0x64) & 1) {
         inb(0x60);
-        if (++flush_count > 100) {
-            serial::print("  flush timeout\n");
-            break;
-        }
     }
 
     // wait for controller: check bit 1 (input buffer full)
     // cannot send commands until this bit is 0
-    auto wait_count = 0u;
     while (inb(0x64) & 2) {
-        if (++wait_count > 100000) {
-            serial::print("  controller timeout\n");
-            return;
-        }
         core::pause();
     }
 
@@ -527,21 +502,16 @@ auto inline init_keyboard() -> void {
     outb(0x60, 0xf4);
 
     // diagnostic: wait for 0xfa (acknowledge) from the keyboard
-    auto ack_received = false;
-    for (auto i = 0u; i < 1'000'000; ++i) {
+    // assuming hardware is correct, we block indefinitely until ack
+    while (true) {
         if (inb(0x64) & 1) {
             auto const response = inb(0x60);
             if (response == 0xfa) {
                 serial::print("  ack\n");
-                ack_received = true;
                 break;
             }
         }
         core::pause();
-    }
-
-    if (!ack_received) {
-        serial::print("  warning: kbd did not ack\n");
     }
 }
 
@@ -597,18 +567,18 @@ extern "C" auto kernel_on_keyboard() -> void {
         // read raw byte from data port
         auto const scancode = inb(0x60);
 
-        // diagnostic: log scancode to serial for debugging
+        // log scancode to serial for debugging
         serial::print("|");
         serial::print_hex_byte(scancode);
         serial::print("|");
 
-        // pass scancode to the operating system's input layer
+        // notify the os layer that a keyboard event has occured
         osca::on_keyboard(scancode);
     }
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
-    // notifies the lapic that the handler is finished so it can deliver
-    // the next interrupt of equal or lower priority
+    // notifies the lapic that the handler is finished so it can deliver the
+    // next interrupt of equal or lower priority
     apic.local[0x0b0 / 4] = 0;
 }
 
@@ -616,12 +586,11 @@ extern "C" auto kernel_on_keyboard() -> void {
 // c-linkage handler called by the assembly timer stub
 extern "C" auto kernel_on_timer() -> void {
     // notify the os layer that a tick has occurred
-    // typically used for task switching, sleep timers, or profiling
     osca::on_timer();
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
-    // essential to clear the 'in-service' bit in the lapic
-    // failure to do this will prevent any further timer interrupts
+    // notifies the lapic that the handler is finished so it can deliver the
+    // next interrupt of equal or lower priority
     apic.local[0x0b0 / 4] = 0;
 }
 
@@ -638,7 +607,7 @@ extern "C" auto kernel_on_timer() -> void {
                  : "memory");
     // note: why -8?
     // the x86-64 system v abi requires the stack to be 16-byte aligned at the
-    // point a call occurs. since a call pushes an 8-byte return address, the
+    // point a call occurs; since a call pushes an 8-byte return address, the
     // compiler expects the stack to end in 0x8 upon entering a function.
 
     // the compiler is informed that this point is never reached
@@ -682,7 +651,7 @@ auto delay_us(u64 const us) -> void {
     // calculate how many pit ticks are required for the requested microseconds.
     auto ticks = (us * pit_base_freq) / 1'000'000;
 
-    // the pit counter is only 16-bit (max 65535).
+    // the pit counter is only 16-bit (max 65535)
     // 65535 ticks at 1.19mhz is roughly 55ms.
     while (ticks > 0) {
         auto const current_batch = (ticks > 0xffff) ? 0xffffu : u16(ticks);
@@ -695,12 +664,12 @@ auto delay_us(u64 const us) -> void {
         outb(0x43, 0b10'11'000'0);
 
         // load the 16-bit divisor
-        outb(0x42, u8(current_batch & 0xff));        // low byte
-        outb(0x42, u8((current_batch >> 8) & 0xff)); // high byte
+        outb(0x42, u8(current_batch & 0xff)); // low byte
+        outb(0x42, u8(current_batch >> 8));   // high byte
 
         // start the timer by gating channel 2
         // port 0x61, bit 0 controls the gate for channel 2
-        auto port_61 = inb(0x61);
+        auto const port_61 = inb(0x61);
 
         // ensure speaker (bit 1) is off, gate (bit 0) is on.
         outb(0x61, (port_61 & ~2) | 1);
@@ -733,10 +702,10 @@ auto inline send_init_sipi(u8 const apic_id, u32 const trampoline_address)
     }
 
     // wait 10ms for ap to settle after reset (intel requirement)
-    delay_us(10 * 1000);
+    delay_us(10 * 1'000);
 
     // convert address to 4KB page vector; 0x8000 -> 0x08
-    auto const vector = (trampoline_address >> 12) & 0xff;
+    auto const vector = trampoline_address >> 12;
 
     // re-select target apic id
     apic.local[0x310 / 4] = u32(apic_id) << 24;
@@ -786,8 +755,8 @@ auto inline init_cores() {
     protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
     protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
-    // note: page tables are in WB cacheable RAM
-    //       x86 cache coherence guarantees visibility to APs
+    // note: page tables are in wb cacheable ram
+    //       x86 cache coherence guarantees visibility to ap
     //       no cache flushes or fences required
 
     serial::print("  count: ");
@@ -797,7 +766,7 @@ auto inline init_cores() {
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
         // usually the bsp has apic id 0, but check specifically
-        auto const bsp_id = (apic.local[0x020 / 4] >> 24) & 0xff;
+        auto const bsp_id = apic.local[0x020 / 4] >> 24;
         if (cores[i].apic_id == bsp_id) {
             continue;
         }
@@ -827,7 +796,7 @@ auto inline init_cores() {
             uptr task;
             uptr long_mode_pml4;
         };
-        auto* config =
+        auto* const config =
             ptr_offset<TrampolineConfig>(TRAMPOLINE_DEST, config_offset);
 
         // fill the values
@@ -885,4 +854,5 @@ auto inline init_cores() {
 // required by msvc/clang abi when floating-point arithmetic is used
 extern "C" i32 _fltused = 0;
 
+// required for in-place constructed object to be deleted
 auto operator delete(void*, size_t) noexcept -> void {}
