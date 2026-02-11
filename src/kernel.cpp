@@ -565,7 +565,7 @@ auto inline init_idt() -> void {
     // alignas(16): required for performance and hardware consistency
     alignas(16) static IDTEntry idt[256];
 
-    // set idt entry 32 (lapic timer)
+    // set idt entry lapic timer
     // 0x8e: 10001110b -> p=1, dpl=00, type=1110 (64-bit interrupt gate)
     // p : present
     // dpl: ring 0
@@ -575,7 +575,7 @@ auto inline init_idt() -> void {
     idt[TIMER_VECTOR] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                          u32(apic_addr >> 32), 0};
 
-    // set idt entry 33 (keyboard)
+    // set idt entry keyboard
     auto const kbd_addr = u64(kernel_asm_keyboard_handler);
     idt[KEYBOARD_VECTOR] = {
         u16(kbd_addr), 8, 0, 0x8e, u16(kbd_addr >> 16), u32(kbd_addr >> 32), 0};
