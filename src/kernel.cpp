@@ -149,7 +149,6 @@ auto make_heap() -> Heap {
     // parse uefi memory descriptors
     auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
-
     for (auto i = 0u; i < num_descriptors; ++i) {
         // step by uefi-defined descriptor size
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
@@ -194,14 +193,14 @@ auto allocate_pages(u64 const num_pages) -> void* {
 // page table traversal
 // returns pointer to the next level in paging hierarchy
 // allocates a new zeroed page if the entry is not present
-auto get_next_table(u64* table, u64 index) -> u64* {
+auto get_next_table(u64* table, u64 const index) -> u64* {
     // check bit 0 (p): present
     if (!(table[index] & 0x01)) {
         // create next level only when needed
         auto const* next = allocate_pages(1); // zeroed 4KB chunk
         // link new table: set physical address and flags
         // 0x03: present | writable
-        table[index] = uptr(next) | 0x03;
+        table[index] = uptr(next) | 3;
     }
     // mask lower 12 bits: remove flags to get pure physical address
     // x64 paging structures are always 4k aligned
@@ -265,7 +264,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         auto* pdp = get_next_table(long_mode_pml4, pml4_idx);
         auto* pd = get_next_table(pdp, pdp_idx);
 
-        // check if 2mb mapping is possible: aligned start and sufficient size
+        // check if 2MB mapping is possible: aligned start and sufficient size
         if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
             // huge page: ps (page size) bit = 1 in page directory entry
             auto entry_flags = flags | PAGE_PS;
@@ -279,7 +278,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             }
 
             pd[pd_idx] = addr | entry_flags;
-            addr += 0x20'0000; // jump by 2mb
+            addr += 0x20'0000; // jump by 2MB
         } else {
             // standard page: leaf exists at level 1 (pt)
             auto* pt = get_next_table(pd, pd_idx);
@@ -287,7 +286,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
 
             if (flags & USE_PAT_WC) {
                 // write-combining (index 4): binary 100
-                // for 4kb pages, pat bit is bit 7
+                // for 4KB pages, pat bit is bit 7
                 entry_flags &= ~PAGE_PWT;
                 entry_flags &= ~PAGE_PCD;
                 entry_flags &= ~USE_PAT_WC;
@@ -295,7 +294,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             }
 
             pt[pt_idx] = addr | entry_flags;
-            addr += 0x1000;
+            addr += 0x1000; // jump by 4KB
         }
     }
 }
@@ -319,10 +318,10 @@ auto init_paging() -> void {
     auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
 
     // parse uefi memory map to identity-map system ram and firmware regions
-    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
-    auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     auto total_mem_B = 0ull;
     auto free_mem_B = 0ull;
+    auto const* desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
+    auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
         auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             desc, i * memory_map.descriptor_size);
@@ -342,7 +341,7 @@ auto init_paging() -> void {
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
         } else if (d->Type == EfiConventionalMemory) {
-            // general purpose ra
+            // general purpose ram
             // serial::print("* memory\n");
             map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
             total_mem_B += d->NumberOfPages * 4096;
@@ -405,7 +404,7 @@ auto init_paging() -> void {
     // pat index 4 (pa4): bits 32-34 of the 64-bit msr
     // 0x01: write-combining (wc) mode
     // wc is essential for framebuffers; it buffers writes to the gpu
-    high = (high & ~0x07u) | 0x01u;
+    high = (high & ~0x07u) | 1;
 
     // wrmsr: write edx:eax back to ia32_pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
@@ -458,7 +457,7 @@ auto inline init_timer() -> void {
 
     // dcr (divide configuration register): set timer divisor
     // 0x03: divide by 16 (timer increments every 16 bus cycles)
-    apic.local[0x3e0 / 4] = 0x03;
+    apic.local[0x3e0 / 4] = 3;
 
     // lvt timer register: configure mode and vector
     // bit 17 (1 << 17): periodic mode (auto-reloads count)
@@ -607,7 +606,7 @@ extern "C" auto kernel_on_keyboard() -> void {
     // eoi (end of interrupt): writing 0 to offset 0x0b0
     // notifies the lapic that the handler is finished so it can deliver
     // the next interrupt of equal or lower priority
-    apic.local[0x0B0 / 4] = 0;
+    apic.local[0x0b0 / 4] = 0;
 }
 
 // lapic timer interrupt handler
@@ -620,7 +619,7 @@ extern "C" auto kernel_on_timer() -> void {
     // eoi (end of interrupt): writing 0 to offset 0x0b0
     // essential to clear the 'in-service' bit in the lapic
     // failure to do this will prevent any further timer interrupts
-    apic.local[0x0B0 / 4] = 0;
+    apic.local[0x0b0 / 4] = 0;
 }
 
 // jumping to the os entry point
@@ -644,7 +643,7 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 // In your global scope
-inline u8 run_core_started_flag;
+u8 inline run_core_started_flag;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
@@ -722,7 +721,7 @@ auto inline send_init_sipi(u8 const apic_id, u32 const trampoline_address)
     // select target core via high dword of icr
     apic.local[0x310 / 4] = u32(apic_id) << 24;
 
-    // send init ipi to reset the ap (application processor)
+    // send init ipi to reset the application processor (ap)
     apic.local[0x300 / 4] = 0x00004500;
 
     // wait until the delivery status bit clears

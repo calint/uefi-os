@@ -92,7 +92,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
         if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
                         &acpi_20_guid)) {
-            rsdp = static_cast<RSDP*>(sys->ConfigurationTable[i].VendorTable);
+            rsdp = ptr<RSDP>(sys->ConfigurationTable[i].VendorTable);
             break;
         }
     }
@@ -159,7 +159,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
             kernel::apic.local = ptr<u32>(madt->lapic_address);
 
             auto const* curr = madt->entries;
-            auto const* end = ptr_offset<u8>(madt, madt->header.length);
+            auto const* const end = ptr_offset<void>(madt, madt->header.length);
             while (curr < end) {
                 struct [[gnu::packed]] MADT_EntryHeader {
                     u8 type;
@@ -178,7 +178,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         u32 flags;  // bit 0: enabled, bit 1: online capable
                     };
                     auto const* core = ptr<MADT_LAPIC>(curr);
-                    if (core->flags & 0x03) { // if enabled or online capable
+                    if (core->flags & 3) { // if enabled or online capable
                         kernel::cores[kernel::core_count] = {.apic_id =
                                                                  core->apic_id};
                         ++kernel::core_count;
@@ -217,11 +217,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         kernel::keyboard_config.gsi = iso->gsi;
                         kernel::keyboard_config.flags = 0;
                         // polarity: 3 = active low
-                        if ((iso->flags & 0x3) == 0x3) {
+                        if ((iso->flags & 3) == 3) {
                             kernel::keyboard_config.flags |= (1 << 13);
                         }
                         // trigger: 3 = level
-                        if (((iso->flags >> 2) & 0x3) == 0x3) {
+                        if (((iso->flags >> 2) & 3) == 3) {
                             kernel::keyboard_config.flags |= (1 << 15);
                         }
                     }
@@ -237,7 +237,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         u64 address;
                     };
                     auto const* lapic = ptr<MADT_LAPIC_Override>(curr);
-                    kernel::apic.local = ptr<u32 volatile>(lapic->address);
+                    kernel::apic.local = ptr<u32>(lapic->address);
                     break;
                 }
 
@@ -293,12 +293,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                              &descriptor_ver) == EFI_SUCCESS) {
 
             if (bs->ExitBootServices(img, key) == EFI_SUCCESS) {
-                kernel::memory_map = {.buffer = static_cast<void*>(map),
+                kernel::memory_map = {.buffer = ptr<void>(map),
                                       .size = size,
                                       .descriptor_size = descriptor_size,
                                       .descriptor_version = descriptor_ver};
                 kernel::start();
-                __builtin_unreachable();
             }
         }
     }
