@@ -8,33 +8,34 @@ using i8 = char;
 using i16 = short;
 using i32 = int;
 using i64 = long long;
-using uptr = u64;
 using f32 = float;
 using f64 = double;
+using uptr = u64;
 
 // shorthand for pointer casts
 
-template <typename T> auto inline ptr(void* p) -> T* {
+template <typename T> auto inline ptr(void* const p) -> T* {
     return static_cast<T*>(p);
 }
 
-template <typename T> auto inline ptr(void const* p) -> T const* {
+template <typename T> auto inline ptr(void const* const p) -> T const* {
     return static_cast<T const*>(p);
 }
 
-template <typename T> auto inline ptr(uptr p) -> T* {
+template <typename T> auto inline ptr(uptr const p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
-template <typename T> auto ptr_offset(void const* p, u64 bytes) -> T const* {
+template <typename T>
+auto ptr_offset(void const* const p, u64 const bytes) -> T const* {
     return ptr<T>(uptr(p) + bytes);
 }
 
-template <typename T> auto ptr_offset(void* p, u64 bytes) -> T* {
+template <typename T> auto ptr_offset(void* const p, u64 const bytes) -> T* {
     return ptr<T>(uptr(p) + bytes);
 }
 
-template <typename T> auto ptr_offset(uptr p, u64 bytes) -> T* {
+template <typename T> auto ptr_offset(uptr const p, u64 const bytes) -> T* {
     return ptr<T>(p + bytes);
 }
 

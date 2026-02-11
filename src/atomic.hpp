@@ -3,8 +3,10 @@
 namespace atomic {
 
 template <typename T>
-auto inline compare_exchange_acquire_relaxed(T* target, T* expected, T desired,
-                                             bool weak) -> bool {
+auto inline compare_exchange_acquire_relaxed(T* const target, T* const expected,
+                                             T const desired, bool const weak)
+    -> bool {
+
     return __atomic_compare_exchange_n(
         target,           // pointer to the object to modify
         expected,         // pointer to the value we expect to find
@@ -15,27 +17,31 @@ auto inline compare_exchange_acquire_relaxed(T* target, T* expected, T desired,
     );
 }
 
-template <typename T> auto inline add_release(T* target, T delta) -> void {
+template <typename T>
+auto inline add_release(T* const target, T const delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELEASE);
 }
 
-template <typename T> auto inline add_relaxed(T* target, T delta) -> void {
+template <typename T>
+auto inline add_relaxed(T const* const target, T const delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
 
-template <typename T> auto inline load_acquire(T const* target) -> T {
+template <typename T> auto inline load_acquire(T const* const target) -> T {
     return __atomic_load_n(target, __ATOMIC_ACQUIRE);
 }
 
-template <typename T> auto inline load_relaxed(T const* target) -> T {
+template <typename T> auto inline load_relaxed(T const* const target) -> T {
     return __atomic_load_n(target, __ATOMIC_RELAXED);
 }
 
-template <typename T> auto inline store_release(T* target, T val) -> void {
+template <typename T>
+auto inline store_release(T* const target, T const val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELEASE);
 }
 
-template <typename T> auto inline store_relaxed(T* target, T val) -> void {
+template <typename T>
+auto inline store_relaxed(T const* const target, T const val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELAXED);
 }
 

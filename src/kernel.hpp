@@ -50,11 +50,11 @@ struct Heap {
 
 Heap inline heap;
 
-auto inline outb(u16 port, u8 val) -> void {
+auto inline outb(u16 const port, u8 const val) -> void {
     asm volatile("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
-auto inline inb(u16 port) -> u8 {
+auto inline inb(u16 const port) -> u8 {
     u8 result;
     asm volatile("inb %1, %0" : "=a"(result) : "Nd"(port));
     return result;
@@ -68,11 +68,12 @@ namespace kernel::serial {
 
 auto inline print(char const* s) -> void {
     while (*s) {
-        outb(0x3f8, u8(*s++));
+        outb(0x3f8, u8(*s));
+        ++s;
     }
 }
 
-auto inline print_hex(u64 val) -> void {
+auto inline print_hex(u64 const val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 60; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
@@ -107,7 +108,7 @@ auto inline print_dec(u64 val) -> void {
     }
 }
 
-auto inline print_hex_byte(u8 val) -> void {
+auto inline print_hex_byte(u8 const val) -> void {
     u8 constexpr hex_chars[] = "0123456789ABCDEF";
     for (auto i = 4; i >= 0; i -= 4) {
         outb(0x3f8, hex_chars[(val >> i) & 0xf]);
@@ -145,7 +146,7 @@ extern "C" i32 _fltused;
 // built-in replacements
 //
 
-extern "C" auto inline memset(void* s, i32 c, u64 n) -> void* {
+extern "C" auto inline memset(void* s, i32 const c, u64 n) -> void* {
     void* original_s = s;
     asm volatile("rep stosb" : "+D"(s), "+c"(n) : "a"(u8(c)) : "memory");
     return original_s;
