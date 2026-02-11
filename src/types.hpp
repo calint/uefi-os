@@ -14,28 +14,32 @@ using uptr = u64;
 
 // shorthand for pointer casts
 
-template <typename T> auto inline ptr(void* const p) -> T* {
+template <typename T> auto constexpr inline ptr(void* const p) -> T* {
     return static_cast<T*>(p);
 }
 
-template <typename T> auto inline ptr(void const* const p) -> T const* {
+template <typename T>
+auto constexpr inline ptr(void const* const p) -> T const* {
     return static_cast<T const*>(p);
 }
 
-template <typename T> auto inline ptr(uptr const p) -> T* {
+template <typename T> auto constexpr inline ptr(uptr const p) -> T* {
     return reinterpret_cast<T*>(p);
 }
 
 template <typename T>
-auto ptr_offset(void const* const p, u64 const bytes) -> T const* {
+auto constexpr inline ptr_offset(void const* const p, u64 const bytes)
+    -> T const* {
     return ptr<T>(uptr(p) + bytes);
 }
 
-template <typename T> auto ptr_offset(void* const p, u64 const bytes) -> T* {
+template <typename T>
+auto constexpr inline ptr_offset(void* const p, u64 const bytes) -> T* {
     return ptr<T>(uptr(p) + bytes);
 }
 
-template <typename T> auto ptr_offset(uptr const p, u64 const bytes) -> T* {
+template <typename T>
+auto constexpr inline ptr_offset(uptr const p, u64 const bytes) -> T* {
     return ptr<T>(p + bytes);
 }
 
@@ -59,11 +63,13 @@ template <typename T> struct remove_reference<T&&> {
 };
 
 template <typename T>
-auto constexpr fwd(typename remove_reference<T>::type& t) noexcept -> T&& {
+auto constexpr inline fwd(typename remove_reference<T>::type& t) noexcept
+    -> T&& {
     return static_cast<T&&>(t);
 }
 
 template <typename T>
-auto constexpr fwd(typename remove_reference<T>::type&& t) noexcept -> T&& {
+auto constexpr inline fwd(typename remove_reference<T>::type&& t) noexcept
+    -> T&& {
     return static_cast<T&&>(t);
 }
