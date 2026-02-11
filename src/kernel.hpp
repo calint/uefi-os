@@ -64,10 +64,6 @@ auto inline inb(u16 const port) -> u8 {
 
 } // namespace kernel
 
-// kernel callback assembler functions
-extern "C" auto kernel_asm_timer_handler() -> void;
-extern "C" auto kernel_asm_keyboard_handler() -> void;
-
 namespace kernel::serial {
 
 auto inline print(char const* s) -> void {
@@ -132,6 +128,10 @@ auto inline interrupts_disable() -> void { asm volatile("cli"); }
 auto inline halt() -> void { asm volatile("hlt"); }
 
 } // namespace kernel::core
+
+// kernel callback assembler functions
+extern "C" auto kernel_asm_timer_handler() -> void;
+extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 // binding to osca
 namespace osca {
