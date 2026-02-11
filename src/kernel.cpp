@@ -445,6 +445,8 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
+auto constexpr TIMER_VECTOR = 32u;
+
 // disables legacy pic and starts lapic timer in periodic mode
 auto inline init_timer() -> void {
     // disable legacy pic: mask all interrupts on master (0x21) and slave (0xa1)
@@ -462,8 +464,8 @@ auto inline init_timer() -> void {
 
     // lvt timer register: configure mode and vector
     // bit 17 (1 << 17): periodic mode (auto-reloads count)
-    // bits 0-7 (32): vector index in idt for timer interrupts
-    apic.local[0x320 / 4] = (1 << 17) | 32;
+    // bits 0-7: vector index in idt for timer interrupts
+    apic.local[0x320 / 4] = (1 << 17) | TIMER_VECTOR;
 
     // icr (initial count register): set the countdown start value
     // uses calibration logic to determine 2hz (0.5s interval)
@@ -481,6 +483,8 @@ auto io_apic_write(u32 const reg, u32 const val) -> void {
     apic.io[4] = val; // write value
 }
 
+auto constexpr KEYBOARD_VECTOR = 33u;
+
 // keyboard and io-apic routing
 // routes keyboard irq through io-apic and enables scanning
 auto inline init_keyboard() -> void {
@@ -490,8 +494,9 @@ auto inline init_keyboard() -> void {
     // configure io-apic redirection table for keyboard (usually gsi 1)
     // index 0x10 is the start of the redirection table (2 x 32-bit registers
     // per entry)
-    // low 32 bits: vector 33 | flags (trigger mode, polarity, etc.)
-    io_apic_write(0x10 + keyboard_config.gsi * 2, 33 | keyboard_config.flags);
+    // low 32 bits: vector | flags (trigger mode, polarity, etc.)
+    io_apic_write(0x10 + keyboard_config.gsi * 2,
+                  KEYBOARD_VECTOR | keyboard_config.flags);
     // high 32 bits: destination field (sets which cpu receives the interrupt)
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 
@@ -567,13 +572,13 @@ auto inline init_idt() -> void {
     // type: disable nested interrupts
     // 8: second entry in the gdt (code)
     auto const apic_addr = u64(kernel_asm_timer_handler);
-    idt[32] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
-               u32(apic_addr >> 32), 0};
+    idt[TIMER_VECTOR] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
+                         u32(apic_addr >> 32), 0};
 
     // set idt entry 33 (keyboard)
     auto const kbd_addr = u64(kernel_asm_keyboard_handler);
-    idt[33] = {u16(kbd_addr),       8, 0, 0x8e, u16(kbd_addr >> 16),
-               u32(kbd_addr >> 32), 0};
+    idt[KEYBOARD_VECTOR] = {
+        u16(kbd_addr), 8, 0, 0x8e, u16(kbd_addr >> 16), u32(kbd_addr >> 32), 0};
 
     // idtr: the 10-byte structure passed to 'lidt'
     struct [[gnu::packed]] IDTR {
