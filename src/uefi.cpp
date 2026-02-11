@@ -12,8 +12,8 @@ auto constexpr MAX_CORES = 256u;
 auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
     // casting to u8* (byte pointer) ensures to ignore structural padding
     // and avoids potential alignment faults on strict architectures
-    auto const* p1 = ptr<u8 const>(g1);
-    auto const* p2 = ptr<u8 const>(g2);
+    auto const* const p1 = ptr<u8 const>(g1);
+    auto const* const p2 = ptr<u8 const>(g2);
 
     for (auto i = 0u; i < sizeof(EFI_GUID); ++i) {
         if (p1[i] != p2[i]) {
@@ -26,8 +26,8 @@ auto inline guids_equal(EFI_GUID const* g1, EFI_GUID const* g2) -> bool {
 
 // uefi console output
 // high-level wrapper for the uefi boot-time text console
-auto inline console_print(EFI_SYSTEM_TABLE const* sys, char16_t const* s)
-    -> void {
+auto inline console_print(EFI_SYSTEM_TABLE const* const sys,
+                          char16_t const* const s) -> void {
 
     sys->ConOut->OutputString(sys->ConOut,
                               ptr<CHAR16>(const_cast<char16_t*>(s)));
@@ -43,13 +43,14 @@ auto inline console_print(EFI_SYSTEM_TABLE const* sys, char16_t const* s)
 
 // the uefi entry point
 extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
-                                EFI_SYSTEM_TABLE const* sys) -> EFI_STATUS {
+                                EFI_SYSTEM_TABLE const* const sys)
+    -> EFI_STATUS {
 
     sys->ConOut->ClearScreen(sys->ConOut);
 
     console_print(sys, u"efi_main\n");
 
-    auto const* bs = sys->BootServices;
+    auto const* const bs = sys->BootServices;
 
     //
     // get frame buffer config
@@ -87,7 +88,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
         u8 extended_checksum;
         u8 reserved[3];
     };
-    RSDP* rsdp = nullptr;
+    RSDP const* rsdp = nullptr;
     EFI_GUID acpi_20_guid = ACPI_20_TABLE_GUID;
     for (auto i = 0u; i < sys->NumberOfTableEntries; ++i) {
         if (guids_equal(&sys->ConfigurationTable[i].VendorGuid,
@@ -114,11 +115,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
         u32 creator_id;
         u32 creator_revision;
     };
-    auto const* xsdt = ptr<SDTHeader>(rsdp->xsdt_address);
+    auto const* const xsdt = ptr<SDTHeader>(rsdp->xsdt_address);
 
     // calculate number of pointers in xsdt
     auto const entries = (xsdt->length - sizeof(SDTHeader)) / sizeof(u64);
-    auto const* ptrs = ptr_offset<u64>(xsdt, sizeof(SDTHeader));
+    auto const* const ptrs = ptr_offset<u64>(xsdt, sizeof(SDTHeader));
 
     // retrieve i/o apics in the system
     // find keyboard and get gsi and flags
@@ -142,7 +143,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     // find apic values and keyboard configuration
     // parse the madt (multiple apic description table) to route interrupts
     for (auto i = 0u; i < entries; ++i) {
-        auto const* header = ptr<SDTHeader>(ptrs[i]);
+        auto const* const header = ptr<SDTHeader>(ptrs[i]);
         auto constexpr APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
         // signature compare (x86 little-endian)
         if (*ptr<u32>(header->signature) == APIC_SIGNATURE) {
@@ -154,7 +155,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                 u32 flags;
                 u8 entries[];
             };
-            auto const* madt = ptr<MADT>(header);
+            auto const* const madt = ptr<MADT>(header);
 
             kernel::apic.local = ptr<u32>(madt->lapic_address);
 
@@ -165,7 +166,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                     u8 type;
                     u8 length;
                 };
-                auto const* entry = ptr<MADT_EntryHeader>(curr);
+                auto const* const entry = ptr<MADT_EntryHeader>(curr);
 
                 switch (entry->type) {
 
@@ -177,7 +178,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         u8 apic_id; // id used to target the core via ipi
                         u32 flags;  // bit 0: enabled, bit 1: online capable
                     };
-                    auto const* core = ptr<MADT_LAPIC>(curr);
+                    auto const* const core = ptr<MADT_LAPIC>(curr);
                     if (core->flags & 3) { // if enabled or online capable
                         kernel::cores[kernel::core_count] = {.apic_id =
                                                                  core->apic_id};
@@ -209,7 +210,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         u32 gsi;   // the global system interrupt (io apic pin)
                         u16 flags; // polarity and trigger mode
                     };
-                    auto const* iso = ptr<MADT_ISO>(curr);
+                    auto const* const iso = ptr<MADT_ISO>(curr);
 
                     // check for keyboard irq
                     if (iso->source == 1) {
@@ -236,7 +237,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                         u16 res;
                         u64 address;
                     };
-                    auto const* lapic = ptr<MADT_LAPIC_Override>(curr);
+                    auto const* const lapic = ptr<MADT_LAPIC_Override>(curr);
                     kernel::apic.local = ptr<u32>(lapic->address);
                     break;
                 }
@@ -274,7 +275,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     bs->GetMemoryMap(&size, nullptr, &key, &descriptor_size, &descriptor_ver);
 
     // allocate an extra page in case memory map increases
-    auto map_capacity = size + 4096;
+    auto const map_capacity = size + 4096;
 
     // allocate the memory
     EFI_MEMORY_DESCRIPTOR* map = nullptr;
