@@ -137,8 +137,8 @@ extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
 // kernel callback from assembler
-extern "C" auto kernel_on_keyboard() -> void;
 extern "C" auto kernel_on_timer() -> void;
+extern "C" auto kernel_on_keyboard() -> void;
 
 // binding to osca
 namespace osca {
