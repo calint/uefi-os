@@ -849,6 +849,3 @@ auto inline init_cores() {
 
 // required by msvc/clang abi when floating-point arithmetic is used
 extern "C" i32 _fltused = 0;
-
-// required for in-place constructed object to be deleted
-auto operator delete(void*, size_t) noexcept -> void {}

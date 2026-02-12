@@ -27,6 +27,7 @@ WARNINGS="-Weverything \
     -Wno-unneeded-member-function \
     -Wno-unique-object-duplication \
     -Wno-gnu-alignof-expression \
+    -Wno-inline-new-delete \
     "
 
 clang++ $FLAGS $CPPFLAGS $WARNINGS \
