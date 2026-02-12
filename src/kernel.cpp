@@ -610,7 +610,7 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-u8 inline volatile run_core_started_flag;
+u8 volatile static run_core_started_flag;
 // note: volatile to ensure compiler does not cache it in a register
 
 // this is the entry point for application processors
