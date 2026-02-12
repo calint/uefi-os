@@ -126,16 +126,16 @@ auto inline init_gdt() -> void {
     auto const descriptor =
         GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
 
-    asm volatile("lgdt %0\n\t"         // load gdt register (gdtr)
-                 "mov $0x10, %%ax\n\t" // 0x10 points to data descriptor
-                 "mov %%ax, %%ds\n\t"  // load data segment
-                 "mov %%ax, %%es\n\t"  // load extra segment
-                 "mov %%ax, %%ss\n\t"  // load stack segment
-                 "pushq $0x08\n\t"     // push code selector (0x08) for lretq
-                 "lea 1f(%%rip), %%rax\n\t" // load address of label '1'
-                 "pushq %%rax\n\t"          // push rip for lretq
-                 "lretq\n\t" // far return: pops rip and cs to flush pipeline
-                 "1:\n\t"    // now running with new cs/ds/ss
+    asm volatile("lgdt %0\n"              // load gdt register (gdtr)
+                 "mov $0x10, %%ax\n"      // 0x10 points to data descriptor
+                 "mov %%ax, %%ds\n"       // load data segment
+                 "mov %%ax, %%es\n"       // load extra segment
+                 "mov %%ax, %%ss\n"       // load stack segment
+                 "pushq $0x08\n"          // push code selector (0x08) for lretq
+                 "lea 1f(%%rip), %%rax\n" // load address of label '1'
+                 "pushq %%rax\n"          // push rip for lretq
+                 "lretq\n" // far return: pops rip and cs to flush pipeline
+                 "1:\n"    // now running with new cs/ds/ss
                  :
                  : "m"(descriptor)
                  : "rax", "memory");
