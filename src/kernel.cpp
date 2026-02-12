@@ -131,7 +131,7 @@ auto inline init_gdt() -> void {
                  "pushq $0x08\n\t"     // push code selector (0x08) for lretq
                  "lea 1f(%%rip), %%rax\n\t" // load address of label '1'
                  "pushq %%rax\n\t"          // push rip for lretq
-                 "lretq\n\t" // far return: pops rip and cs to flush pipelin
+                 "lretq\n\t" // far return: pops rip and cs to flush pipeline
                  "1:\n\t"    // now running with new cs/ds/ss
                  :
                  : "m"(descriptor)
