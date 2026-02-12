@@ -377,10 +377,6 @@ auto init_paging() -> void {
     // map the heap
     map_range(heap_start, heap_size, RAM_FLAGS);
 
-    // explicitly map the first 2MB as identity mapped including trampoline at
-    // 0x8000 and page tables at 0x1'0000 to 0x1'3000'
-    map_range(0, 0x20'0000, RAM_FLAGS);
-
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
     // rdmsr: read 64-bit model specific register into edx:eax
