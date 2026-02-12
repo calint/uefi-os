@@ -166,14 +166,14 @@ extern "C" auto inline memcpy(void* dest, void const* src, u64 count) -> void* {
     return original_dest;
 }
 
-//
-// allow in place new and delete
-//
+// placement new
 auto constexpr inline operator new(size_t, void* p) noexcept -> void* {
     return p;
 }
 
+// placement delete
 auto constexpr inline operator delete(void*, void*) noexcept -> void {}
 
+// global sized deallocation
+// note: not constexpr to match the compiler's expected signature
 auto inline operator delete(void*, size_t) noexcept -> void {}
-// note: matches the compiler's expected signature for deallocation
