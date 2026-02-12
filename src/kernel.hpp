@@ -111,7 +111,7 @@ auto inline print_dec(u64 val) -> void {
         ++i;
     }
 
-    // print the buffer backwards to show digits in correct order
+    // print the buffer backwards
     while (i > 0) {
         --i;
         outb(0x3f8, buffer[i]);
