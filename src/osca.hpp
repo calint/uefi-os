@@ -82,7 +82,7 @@ template <u32 QueueSize = 256> class Jobs final {
         auto& entry = queue_[head_ % QueueSize];
 
         // (1) paired with release (2)
-        if (atomic::load_acquire(&entry.sequence) != head_) {
+        if (atomic::load(&entry.sequence, atomic::ACQUIRE) != head_) {
             // slot is not free from the previous lap
             return false;
         }
@@ -98,7 +98,7 @@ template <u32 QueueSize = 256> class Jobs final {
 
         // hand over the slot to be run
         // (3) paired with acquire (4)
-        atomic::store_release(&entry.sequence, head_);
+        atomic::store(&entry.sequence, head_, atomic::RELEASE);
 
         return true;
     }
@@ -118,12 +118,12 @@ template <u32 QueueSize = 256> class Jobs final {
     auto run_next() -> bool {
         // optimistic read; job data visible at (4), claimed at (7)
         // note: if `t` is stale, either sequence check or CAS will safely fail
-        auto t = atomic::load_relaxed(&tail_);
+        auto t = atomic::load(&tail_, atomic::RELAXED);
         while (true) {
             auto& entry = queue_[t % QueueSize];
 
             // (4) paired with release (3)
-            auto seq = atomic::load_acquire(&entry.sequence);
+            auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
             if (seq != t + 1) {
                 // job not ready or `t` stale; caller will retry
                 return false;
@@ -132,17 +132,17 @@ template <u32 QueueSize = 256> class Jobs final {
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
             // (7) atomically claims this job from competing consumers
-            if (atomic::compare_exchange_acquire_relaxed(&tail_, &t, t + 1,
-                                                         true)) {
+            if (atomic::compare_exchange(&tail_, &t, t + 1, true,
+                                         atomic::ACQUIRE, atomic::RELAXED)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
-                atomic::store_release(&entry.sequence, t + QueueSize);
+                atomic::store(&entry.sequence, t + QueueSize, atomic::RELEASE);
 
                 // increment completed
                 // (5) paired with acquire (6)
-                atomic::add_release(&completed_, 1u);
+                atomic::add(&completed_, 1u, atomic::RELEASE);
 
                 return true;
             }
@@ -156,7 +156,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return head_ - atomic::load_relaxed(&completed_);
+        return head_ - atomic::load(&completed_, atomic::RELAXED);
     }
 
     // called from producer
@@ -166,7 +166,7 @@ template <u32 QueueSize = 256> class Jobs final {
         // this loop
 
         // (6) paired with release (5)
-        while (head_ != atomic::load_acquire(&completed_)) {
+        while (head_ != atomic::load(&completed_, atomic::ACQUIRE)) {
             kernel::core::pause();
         }
     }
