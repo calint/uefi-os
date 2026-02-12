@@ -88,7 +88,7 @@ template <u32 QueueSize = 256> class Jobs final {
         }
 
         // prepare slot
-        new (entry.data) T{forward<Args>(args)...};
+        new (entry.data) T{fwd<Args>(args)...};
         entry.func = [](void* data) {
             auto p = ptr<T>(data);
             p->run();
@@ -106,7 +106,7 @@ template <u32 QueueSize = 256> class Jobs final {
     // called from producer
     // blocks while queue is full
     template <is_job T, typename... Args> auto add(Args&&... args) -> void {
-        while (!try_add<T>(forward<Args>(args)...)) {
+        while (!try_add<T>(fwd<Args>(args)...)) {
             kernel::core::pause();
         }
     }
