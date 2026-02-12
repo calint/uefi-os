@@ -132,6 +132,20 @@ auto inline halt() -> void { asm volatile("hlt"); }
 
 } // namespace kernel::core
 
+namespace kernel {
+
+[[noreturn]] auto inline panic(u32 const color) -> void {
+    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
+        frame_buffer.pixels[i] = color;
+    }
+    // infinite loop so the hardware doesn't reboot
+    core::interrupts_disable();
+    while (true) {
+        core::halt();
+    }
+}
+} // namespace kernel
+
 // kernel callback assembler functions
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;

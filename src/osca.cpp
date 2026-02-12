@@ -67,27 +67,107 @@ auto __attribute__((noinline)) simd_example(f32* dest, f32 const* src,
     }
 }
 
-auto test_simd_support() -> void {
-    kernel::serial::print("  test simd: ");
+// vector type for compiler-assisted vectorization
+using v4f __attribute__((vector_size(16))) = float;
 
-    alignas(16) f32 input[4] = {1.0f, 2.0f, 3.0f, 4.0f};
-    alignas(16) f32 output[4] = {0.0f};
-
-    // run the math
-    simd_example(output, input, 4);
-
-    // validate the result for the first element: (1.0 * 1.5) + 2.0 = 3.5
-    // we cast to int for simple printing since we might not have a
-    // float-to-string yet
-    u32 colr = 0;
-    if (int(output[0]) == 3 && int(output[0] * 10) % 10 == 5) {
-        colr = 0x00'00'ff'00;
-        kernel::serial::print("ok\n");
-    } else {
-        colr = 0x00'ff'00'00;
-        kernel::serial::print("failed\n");
+// (1) vectorized using compiler extensions
+// pointers must be 16-byte aligned, count must be multiple of 4
+auto __attribute__((noinline))
+simd_example_vectorized(f32* const dest, f32 const* const src, u32 const count)
+    -> void {
+    for (auto i = 0u; i < count; i += 4) {
+        v4f v = *ptr<v4f>(&src[i]);
+        v4f r = v * 1.5f + 2.0f;
+        *ptr<v4f>(&dest[i]) = r;
     }
-    draw_rect(600u, 400u, 20u, 20u, colr);
+}
+
+// (2) sse implementation with memory-based immediate operands
+auto __attribute__((noinline)) simd_mul_add_4(f32* const dst,
+                                              f32 const* const src) -> void {
+    alignas(16) static f32 const mulv[4] = {1.5f, 1.5f, 1.5f, 1.5f};
+    alignas(16) static f32 const addv[4] = {2.0f, 2.0f, 2.0f, 2.0f};
+
+    asm volatile(
+        "movaps   (%[src]), %%xmm0      \n"
+        "mulps    %[mul], %%xmm0        \n"
+        "addps    %[add], %%xmm0        \n"
+        "movaps   %%xmm0, (%[dst])      \n"
+        :
+        : [src] "r"(src), [dst] "r"(dst), [mul] "m"(mulv), [add] "m"(addv)
+        : "xmm0", "memory");
+}
+
+// (3) sse implementation using register-loaded operands
+auto __attribute__((noinline)) simd_mul_add_reg(f32* const dst,
+                                                f32 const* const src,
+                                                f32 const* const mulv,
+                                                f32 const* const addv) -> void {
+    asm volatile(
+        "movaps   (%[src]), %%xmm0  \n"
+        "movaps   (%[mul]), %%xmm1  \n"
+        "movaps   (%[add]), %%xmm2  \n"
+        "mulps    %%xmm1, %%xmm0    \n"
+        "addps    %%xmm2, %%xmm0    \n"
+        "movaps   %%xmm0, (%[dst])  \n"
+        :
+        : [src] "r"(src), [dst] "r"(dst), [mul] "r"(mulv), [add] "r"(addv)
+        : "xmm0", "xmm1", "xmm2", "memory");
+}
+
+// (4) avx implementation (uses ymm registers for 8-wide floats)
+auto __attribute__((noinline)) avx_mul_add_8(f32* const dst,
+                                             f32 const* const src,
+                                             f32 const* const mulv,
+                                             f32 const* const addv) -> void {
+    asm volatile(
+        "vmovaps  (%[src]), %%ymm0  \n"
+        "vmovaps  (%[mul]), %%ymm1  \n"
+        "vmovaps  (%[add]), %%ymm2  \n"
+        "vmulps   %%ymm1, %%ymm0, %%ymm0 \n"
+        "vaddps   %%ymm2, %%ymm0, %%ymm0 \n"
+        "vmovaps  %%ymm0, (%[dst])  \n"
+        :
+        : [src] "r"(src), [dst] "r"(dst), [mul] "r"(mulv), [add] "r"(addv)
+        : "ymm0", "ymm1", "ymm2", "memory");
+}
+
+// triggers red screen panic if calculation is incorrect
+auto assert_simd(bool const condition, char const* const msg) -> void {
+    if (!condition) {
+        kernel::serial::print("simd check failed: ");
+        kernel::serial::print(msg);
+        kernel::serial::print("\n");
+        // trigger panic with a unique color for simd failure (e.g., magenta)
+        kernel::panic(0x00ff00ff);
+    }
+}
+
+auto test_simd_support() -> void {
+    alignas(32) f32 src[8] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+    alignas(32) f32 dst[8] = {0};
+    alignas(32) f32 mul[8] = {1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 1.5f, 1.5f};
+    alignas(32) f32 add[8] = {2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f};
+
+    kernel::serial::print("testing sse... ");
+    simd_mul_add_4(dst, src);
+    assert_simd(dst[0] == 3.5f, "sse immediate");
+    kernel::serial::print("ok\n");
+
+    kernel::serial::print("testing sse registers... ");
+    simd_mul_add_reg(dst, src, mul, add);
+    assert_simd(dst[3] == 8.0f, "sse register"); // 4.0 * 1.5 + 2.0
+    kernel::serial::print("ok\n");
+
+    kernel::serial::print("testing vector extensions... ");
+    simd_example_vectorized(dst, src, 4);
+    assert_simd(dst[1] == 5.0f, "compiler vectorization"); // 2.0 * 1.5 + 2.0
+    kernel::serial::print("ok\n");
+
+    kernel::serial::print("testing avx... ");
+    avx_mul_add_8(dst, src, mul, add);
+    assert_simd(dst[7] == 14.0f, "avx ymm check"); // 8.0 * 1.5 + 2.0
+    kernel::serial::print("ok\n");
 }
 
 } // namespace
@@ -156,6 +236,7 @@ namespace osca {
     print_hex(col_val, row, color, kernel::core_count, 3);
     color = color == main_color ? alt_color : main_color;
     ++row;
+
     test_simd_support();
 
     kernel::core::interrupts_enable();

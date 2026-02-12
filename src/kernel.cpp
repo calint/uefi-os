@@ -20,17 +20,6 @@ namespace {
 //       make sure top of stack is 16 bytes aligned
 alignas(16) static u8 kernel_stack[4096];
 
-[[noreturn]] auto panic(u32 const color) -> void {
-    for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
-        frame_buffer.pixels[i] = color;
-    }
-    // infinite loop so the hardware doesn't reboot
-    asm volatile("cli");
-    while (true) {
-        asm volatile("hlt");
-    }
-}
-
 // serial (uart) init
 auto inline init_serial() -> void {
     // ier (interrupt enable register): disable all hardware interrupts
@@ -59,8 +48,8 @@ auto inline init_serial() -> void {
     outb(0x3f8 + 4, 0x0b);
 }
 
-// sse (simd) init
-auto inline init_sse() -> void {
+// fpu/simd (sse & avx) init
+auto inline init_fpu() -> void {
     // cr0: control register 0
     u64 cr0;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -73,19 +62,33 @@ auto inline init_sse() -> void {
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= (1ull << 9);  // set osfxsr: enable fxsave/fxrstor
     cr4 |= (1ull << 10); // set osxmmexcpt: enable simd exceptions (#xm)
+    cr4 |= (1ull << 18); // set osxsave: enable xsave and xgetbv/xsetbv
     asm volatile("mov %0, %%cr4" : : "r"(cr4));
+
+    // xcr0: extended control register 0
+    //  bits name   description
+    //     0 x87    standard fpu state
+    //     1 sse    xmm registers
+    //     2 avx    ymm registers (upper 128 bits)
+    u32 const eax = (1 << 0) | (1 << 1) | (1 << 2);
+    u32 const edx = 0;
+    asm volatile("xsetbv" : : "a"(eax), "d"(edx), "c"(0));
 
     // reset fpu state to defaults
     asm volatile("fninit");
 
     // mxcsr: control/status register for sse
-    //  bits name   description
-    //   0-5 flags  sticky bits set by hardware when errors occur
-    //     6 daz    denormals are zero (treat inputs as 0)
-    //  7-12 masks  set to 1 to ignore corresponding error
-    // 13-14 rc     rounding control (00: nearest, 01: down, 10: up, 11: zero)
-    //    15 ftz    flush to zero (treat tiny results as 0)
-    auto const mxcsr = 0x1f80u | (1 << 15u);
+    //  bits name    description
+    //   0-5 flags   sticky bits set by hardware when errors occur
+    //     6 daz     denormals are zero (treat tiny input values as 0)
+    //  7-12 masks   1 to ignore corresponding error (im, dm, zm, om, um, pm)
+    // 13-14 rc      rounding control (00: nearest, 01: down, 10: up, 11: zero)
+    //    15 ftz     flush to zero (treat tiny result values as 0)
+    //
+    // note: enabling daz (bit 6) and ftz (bit 15) prevents massive performance
+    //       penalties from microcode assists when handling subnormal numbers
+    // masks (bits 7-12) are set to 1 (0x1f80) to prevent exceptions
+    auto const mxcsr = 0x1f80u | (1u << 6u) | (1u << 15u);
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
@@ -822,8 +825,8 @@ auto inline init_cores() {
 
     heap = make_heap();
 
-    serial::print("enable_sse\n");
-    init_sse();
+    serial::print("init_fpu\n");
+    init_fpu();
 
     serial::print("init_gdt\n");
     init_gdt();

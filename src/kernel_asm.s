@@ -21,16 +21,29 @@
     push %r14
     push %r15
 
-    # create space for FXSAVE (512 bytes, 16-byte aligned)
-    # note: stack is now 16 bytes aligned
-    # ((ss, rsp, rflags, cs, rip) + 15) * 8
-    sub $512, %rsp
-    fxsave (%rsp)
+    # r12 is safe to use as an anchor because the C++ ABI 
+    # guarantees the handler will restore it if it touches it
+    mov %rsp, %r12
+
+    # alignment for xsave performance
+    sub $1024, %rsp
+    # clear the lower 6 bits (0x3F)
+    and $-64, %rsp
+
+    # xsave mask: 7 (x87 | SSE | AVX)
+    mov $7, %eax
+    xor %edx, %edx
+    xsave (%rsp)
 .endm
 
 .macro POP_ALL
-    fxrstor (%rsp)
-    add $512, %rsp
+    # restore the extended state
+    mov $7, %eax
+    xor %edx, %edx
+    xrstor (%rsp)
+
+    # snap rsp back to the state before alignment/allocation
+    mov %r12, %rsp
 
     pop %r15
     pop %r14
