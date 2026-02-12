@@ -138,12 +138,14 @@ namespace kernel {
     for (auto i = 0u; i < frame_buffer.stride * frame_buffer.height; ++i) {
         frame_buffer.pixels[i] = color;
     }
+
     // infinite loop so the hardware doesn't reboot
     core::interrupts_disable();
     while (true) {
         core::halt();
     }
 }
+
 } // namespace kernel
 
 // kernel callback assembler functions
