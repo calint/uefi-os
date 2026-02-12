@@ -610,8 +610,8 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-// In your global scope
-u8 inline run_core_started_flag;
+u8 inline volatile run_core_started_flag;
+// note: volatile to ensure compiler does not cache it in a register
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
