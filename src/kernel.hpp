@@ -73,14 +73,24 @@ auto inline print(char const* s) -> void {
     }
 }
 
-auto inline print_hex(u64 const val) -> void {
+auto inline print_hex_byte(u8 const val) -> void {
     u8 constexpr static hex_chars[] = "0123456789ABCDEF";
-    for (auto i = 60; i >= 0; i -= 4) {
-        outb(0x3f8, hex_chars[(val >> i) & 0xf]);
-        if (i != 0 && (i % 16 == 0)) {
-            outb(0x3f8, '_');
-        }
-    }
+    outb(0x3f8, hex_chars[val >> 4]);
+    outb(0x3f8, hex_chars[val & 0xf]);
+}
+
+auto inline print_hex(u64 const val) -> void {
+    print_hex_byte(u8(val >> 56));
+    print_hex_byte(u8(val >> 48));
+    outb(0x3f8, '_');
+    print_hex_byte(u8(val >> 40));
+    print_hex_byte(u8(val >> 32));
+    outb(0x3f8, '_');
+    print_hex_byte(u8(val >> 24));
+    print_hex_byte(u8(val >> 16));
+    outb(0x3f8, '_');
+    print_hex_byte(u8(val >> 8));
+    print_hex_byte(u8(val));
 }
 
 auto inline print_dec(u64 val) -> void {
@@ -91,7 +101,7 @@ auto inline print_dec(u64 val) -> void {
     }
 
     // u64 max is 20 digits
-    u8 buffer[21];
+    u8 buffer[20];
     auto i = 0u;
 
     // extract digits in reverse order
@@ -106,12 +116,6 @@ auto inline print_dec(u64 val) -> void {
         --i;
         outb(0x3f8, buffer[i]);
     }
-}
-
-auto inline print_hex_byte(u8 const val) -> void {
-    u8 constexpr static hex_chars[] = "0123456789ABCDEF";
-    outb(0x3f8, hex_chars[val >> 4]);
-    outb(0x3f8, hex_chars[val & 0xf]);
 }
 
 } // namespace kernel::serial
