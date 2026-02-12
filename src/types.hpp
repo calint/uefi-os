@@ -63,13 +63,13 @@ template <typename T> struct remove_reference<T&&> {
 };
 
 template <typename T>
-auto constexpr inline fwd(typename remove_reference<T>::type& t) noexcept
+auto constexpr inline forward(typename remove_reference<T>::type& t) noexcept
     -> T&& {
     return static_cast<T&&>(t);
 }
 
 template <typename T>
-auto constexpr inline fwd(typename remove_reference<T>::type&& t) noexcept
+auto constexpr inline forward(typename remove_reference<T>::type&& t) noexcept
     -> T&& {
     return static_cast<T&&>(t);
 }
