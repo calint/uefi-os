@@ -136,6 +136,10 @@ auto inline halt() -> void { asm volatile("hlt"); }
 extern "C" auto kernel_asm_timer_handler() -> void;
 extern "C" auto kernel_asm_keyboard_handler() -> void;
 
+// kernel callback from assembler
+extern "C" auto kernel_on_keyboard() -> void;
+extern "C" auto kernel_on_timer() -> void;
+
 // binding to osca
 namespace osca {
 

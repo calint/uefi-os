@@ -9,17 +9,11 @@ CPPFLAGS="-ffreestanding -fno-builtin -fno-stack-protector -mno-red-zone \
     -fno-exceptions -fno-rtti \
     -O3 -g -gdwarf"
 WARNINGS="-Weverything \
-    -Wno-c++98-compat \
     -Wno-c++98-compat-pedantic \
-    -Wno-pre-c++20-compat-pedantic \
     -Wno-c99-extensions \
     -Wno-reserved-identifier \
-    -Wno-reserved-macro-identifier \
     -Wno-unsafe-buffer-usage \
-    -Wno-missing-prototypes \
     -Wno-language-extension-token \
-    -Wno-gnu-anonymous-struct \
-    -Wno-gnu-alignof-expression \
     -Wno-unique-object-duplication \
     -Wno-inline-new-delete \
     -Wno-undef \
@@ -27,7 +21,6 @@ WARNINGS="-Weverything \
     -Wno-unused-variable \
     -Wno-unused-function \
     -Wno-unused-argument \
-    -Wno-unneeded-member-function \
     "
 
 clang++ $FLAGS $CPPFLAGS $WARNINGS \
