@@ -23,7 +23,7 @@ auto inline add_release(T* const target, T const delta) -> void {
 }
 
 template <typename T>
-auto inline add_relaxed(T const* const target, T const delta) -> void {
+auto inline add_relaxed(T* const target, T const delta) -> void {
     __atomic_fetch_add(target, delta, __ATOMIC_RELAXED);
 }
 
@@ -41,8 +41,8 @@ auto inline store_release(T* const target, T const val) -> void {
 }
 
 template <typename T>
-auto inline store_relaxed(T const* const target, T const val) -> void {
+auto inline store_relaxed(T* const target, T const val) -> void {
     __atomic_store_n(target, val, __ATOMIC_RELAXED);
 }
 
-}; // namespace atomic
+} // namespace atomic
