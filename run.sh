@@ -19,15 +19,15 @@ WARNINGS="-Weverything \
     -Wno-missing-prototypes \
     -Wno-language-extension-token \
     -Wno-gnu-anonymous-struct \
+    -Wno-gnu-alignof-expression \
+    -Wno-unique-object-duplication \
+    -Wno-inline-new-delete \
     -Wno-undef \
     -Wno-padded \
     -Wno-unused-variable \
     -Wno-unused-function \
     -Wno-unused-argument \
     -Wno-unneeded-member-function \
-    -Wno-unique-object-duplication \
-    -Wno-gnu-alignof-expression \
-    -Wno-inline-new-delete \
     "
 
 clang++ $FLAGS $CPPFLAGS $WARNINGS \
