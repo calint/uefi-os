@@ -110,9 +110,8 @@ auto inline print_dec(u64 val) -> void {
 
 auto inline print_hex_byte(u8 const val) -> void {
     u8 constexpr static hex_chars[] = "0123456789ABCDEF";
-    for (auto i = 4; i >= 0; i -= 4) {
-        outb(0x3f8, hex_chars[(val >> i) & 0xf]);
-    }
+    outb(0x3f8, hex_chars[val >> 4]);
+    outb(0x3f8, hex_chars[val & 0xf]);
 }
 
 } // namespace kernel::serial
