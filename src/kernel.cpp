@@ -622,8 +622,9 @@ u8 volatile static run_core_started_flag;
     // flag bsp that core is running
     run_core_started_flag = 1;
 
+    init_fpu();
     init_gdt();
-    init_idt();
+    // init_idt();
 
     // find this core index
     auto const apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
