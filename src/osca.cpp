@@ -281,27 +281,39 @@ auto static tick = 0u;
         u32 stride;
         u32 y_start;
         u32 y_end;
-        u32 frame; // Use frame for simple animation/zoom shift
+        u32 frame; // Use frame for zoom level
 
         auto run() -> void {
-            // Mapping constants to define the "view" of the fractal
-            auto const min_re = -2.0f;
-            auto const max_re = 1.0f;
-            auto const min_im = -1.2f;
-            auto const max_im = 1.2f;
+            // Target coordinates to zoom into
+            auto const target_re = -0.743643f;
+            auto const target_im = 0.131825f;
 
-            auto const re_factor = (max_re - min_re) / float((width - 1u));
-            auto const im_factor = (max_im - min_im) / float((height - 1u));
+            // Calculate zoom scale: shrinks as frame increases
+            auto zoom = 1.0f;
+            for (auto i = 0u; i < (frame % 500u); ++i) {
+                zoom *= 0.95f;
+            }
+
+            // Define the viewport based on the current zoom
+            auto const base_w = 3.5f;
+            auto const base_h = 2.0f;
+            auto const min_re = target_re - (base_w * zoom) / 2.0f;
+            auto const max_re = target_re + (base_w * zoom) / 2.0f;
+            auto const min_im = target_im - (base_h * zoom) / 2.0f;
+            auto const max_im = target_im + (base_h * zoom) / 2.0f;
+
+            auto const re_factor = (max_re - min_re) / float(width - 1u);
+            auto const im_factor = (max_im - min_im) / float(height - 1u);
 
             for (auto y = y_start; y < y_end; ++y) {
                 auto c_im = max_im - float(y) * im_factor;
                 for (auto x = 0u; x < width; ++x) {
                     auto c_re = min_re + float(x) * re_factor;
 
-                    // Z = Z^2 + C
                     auto z_re = c_re, z_im = c_im;
                     auto iteration = 0u;
-                    auto const max_iterations = 64u;
+                    // Increase max iterations as you zoom for better detail
+                    auto const max_iterations = 128u;
 
                     while ((z_re * z_re + z_im * z_im <= 4.0f) &&
                            (iteration < max_iterations)) {
@@ -312,14 +324,14 @@ auto static tick = 0u;
                         ++iteration;
                     }
 
-                    // Simple grayscale/blue coloring based on escape time
                     auto color = 0u;
                     if (iteration < max_iterations) {
-                        // Create a gradient: more blue for higher iterations
-                        auto blue = (iteration * 255 / max_iterations) & 0xFF;
-                        color = (blue << 16u) | (blue << 8u) | 255u;
+                        // Dynamic coloring: blue shifts based on zoom/frame
+                        auto blue = (iteration * 255u / max_iterations) & 0xFFu;
+                        auto red = (frame / 2u) & 0xFFu;
+                        color = (red << 16u) | (blue << 8u) | 255u;
                     } else {
-                        color = 0x00000000; // Inside set is black
+                        color = 0x00000000;
                     }
 
                     fb[y * stride + x] = color;
@@ -330,8 +342,8 @@ auto static tick = 0u;
 
     auto frame_count = 0u;
     auto job_count = 1u;
-    auto current_tick = tick;
-    auto frame_no = 0u;
+    auto fps_tick = tick;
+    auto fps_frame = 0u;
     auto fps = 0u;
 
     while (true) {
@@ -358,11 +370,11 @@ auto static tick = 0u;
 
         print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
 
-        ++frame_no;
-        if (tick - current_tick == 20) {
-            fps = frame_no / 20;
-            frame_no = 0;
-            current_tick = tick;
+        ++fps_frame;
+        if (tick - fps_tick == 20) {
+            fps = fps_frame / 20;
+            fps_frame = 0;
+            fps_tick = tick;
             ++job_count;
             kernel::serial::print("fps: ");
             kernel::serial::print_dec(fps);
