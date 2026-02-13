@@ -514,19 +514,25 @@ auto inline init_keyboard() -> void {
     }
 }
 
-// idt (interrupt descriptor table) init
-auto inline init_idt() -> void {
-    // 16-byte descriptor format for x86-64
-    struct [[gnu::packed]] IDTEntry {
-        u16 low;
-        u16 sel;
-        u8 ist;
-        u8 attr;
-        u16 mid;
-        u32 high;
-        u32 res;
-    };
+// 16-byte descriptor format for x86-64
+struct [[gnu::packed]] IDTEntry {
+    u16 low;
+    u16 sel;
+    u8 ist;
+    u8 attr;
+    u16 mid;
+    u32 high;
+    u32 res;
+};
 
+// idtr: the 10-byte structure passed to 'lidt'
+struct [[gnu::packed]] IDTR {
+    u16 limit;
+    u64 base;
+};
+
+// idt (interrupt descriptor table) init for bootstrap processor
+auto inline init_idt_bsp() -> void {
     // alignas(16): required for performance and hardware consistency
     alignas(16) static IDTEntry idt[256];
 
@@ -545,15 +551,18 @@ auto inline init_idt() -> void {
     idt[KEYBOARD_VECTOR] = {
         u16(kbd_addr), 8, 0, 0x8e, u16(kbd_addr >> 16), u32(kbd_addr >> 32), 0};
 
-    // idtr: the 10-byte structure passed to 'lidt'
-    struct [[gnu::packed]] IDTR {
-        u16 limit;
-        u64 base;
-    };
-
     auto const idtr = IDTR{sizeof(idt) - 1, u64(idt)};
 
     // lidt: load the interrupt descriptor table register
+    asm volatile("lidt %0" : : "m"(idtr));
+}
+
+// idt (interrupt descriptor table) init for application processor
+auto inline init_idt_ap() -> void {
+    alignas(16) static IDTEntry idt[256];
+    // note: no interrupt enabled, leads to triple fault as intended
+
+    auto const idtr = IDTR{sizeof(idt) - 1, u64(idt)};
     asm volatile("lidt %0" : : "m"(idtr));
 }
 
@@ -624,7 +633,7 @@ u8 volatile static run_core_started_flag;
 
     init_fpu();
     init_gdt();
-    // note: no init_idt_core because of 0 tolerance to program fault
+    init_idt_ap();
 
     // find this core index
     auto const apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
@@ -835,8 +844,8 @@ auto inline init_cores() {
     serial::print("init_paging\n");
     init_paging();
 
-    serial::print("init_idt\n");
-    init_idt();
+    serial::print("init_idt_bsp\n");
+    init_idt_bsp();
 
     serial::print("init_timer\n");
     init_timer();
