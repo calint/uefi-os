@@ -281,34 +281,74 @@ auto static tick = 0u;
         u32 stride;
         u32 y_start;
         u32 y_end;
-        u32 iteration;
+        u32 frame; // Use frame for simple animation/zoom shift
+
         auto run() -> void {
-            fb += y_start * stride;
+            // Mapping constants to define the "view" of the fractal
+            auto const min_re = -2.0f;
+            auto const max_re = 1.0f;
+            auto const min_im = -1.2f;
+            auto const max_im = 1.2f;
+
+            auto const re_factor = (max_re - min_re) / float((width - 1u));
+            auto const im_factor = (max_im - min_im) / float((height - 1u));
+
             for (auto y = y_start; y < y_end; ++y) {
+                auto c_im = max_im - float(y) * im_factor;
                 for (auto x = 0u; x < width; ++x) {
-                    *fb = (y << 8) + x + iteration;
-                    ++fb;
+                    auto c_re = min_re + float(x) * re_factor;
+
+                    // Z = Z^2 + C
+                    auto z_re = c_re, z_im = c_im;
+                    auto iteration = 0u;
+                    auto const max_iterations = 64u;
+
+                    while ((z_re * z_re + z_im * z_im <= 4.0f) &&
+                           (iteration < max_iterations)) {
+                        auto next_re = z_re * z_re - z_im * z_im + c_re;
+                        auto next_im = 2.0f * z_re * z_im + c_im;
+                        z_re = next_re;
+                        z_im = next_im;
+                        ++iteration;
+                    }
+
+                    // Simple grayscale/blue coloring based on escape time
+                    auto color = 0u;
+                    if (iteration < max_iterations) {
+                        // Create a gradient: more blue for higher iterations
+                        auto blue = (iteration * 255 / max_iterations) & 0xFF;
+                        color = (blue << 16u) | (blue << 8u) | 255u;
+                    } else {
+                        color = 0x00000000; // Inside set is black
+                    }
+
+                    fb[y * stride + x] = color;
                 }
-                fb += stride - width;
             }
         }
     };
 
-    auto iteration = 0u;
-    auto job_count = kernel::core_count - 1u;
-    auto dy = kernel::frame_buffer.height / job_count;
+    auto frame_count = 0u;
+    auto job_count = 1u;
     auto current_tick = tick;
     auto frame_no = 0u;
     auto fps = 0u;
+
     while (true) {
+        auto dy = kernel::frame_buffer.height / job_count;
         auto y = 0u;
         for (auto i = 0u; i < job_count; ++i) {
+            // If height isn't perfectly divisible, the last core takes the
+            // remainder
+            u32 y_end =
+                (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
+
             jobs.add<FractalJob>(
                 fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
-                kernel::frame_buffer.stride, y, y + dy, iteration);
-            y += dy;
+                kernel::frame_buffer.stride, y, y_end, frame_count);
+            y = y_end;
         }
-        ++iteration;
+        ++frame_count;
 
         jobs.wait_idle();
 
@@ -323,6 +363,7 @@ auto static tick = 0u;
             fps = frame_no / 20;
             frame_no = 0;
             current_tick = tick;
+            ++job_count;
             kernel::serial::print("fps: ");
             kernel::serial::print_dec(fps);
             kernel::serial::print("\n");
