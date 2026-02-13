@@ -1,5 +1,6 @@
 #include <efi.h>
 
+#include "atomic.hpp"
 #include "config.hpp"
 #include "kernel.hpp"
 
@@ -622,14 +623,15 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-u8 volatile static run_core_started_flag;
-// note: volatile to ensure compiler does not cache it in a register
+// flag used by ap to message bsp that ap has started
+u8 static run_core_started_flag;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
-    run_core_started_flag = 1;
+    // (1) paired with acquire at (2)
+    atomic::store(&run_core_started_flag, u8(1), atomic::RELEASE);
 
     init_fpu();
     init_gdt();
@@ -821,7 +823,8 @@ auto inline init_cores() {
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // wait for core to start
-        while (run_core_started_flag == 0) {
+        // (2) paired with release (1)
+        while (atomic::load(&run_core_started_flag, atomic::ACQUIRE) == 0) {
             core::pause();
         }
     }
