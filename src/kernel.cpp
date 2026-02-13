@@ -630,7 +630,7 @@ u8 static run_core_started_flag;
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
-    // (1) paired with acquire at (2)
+    // (1) paired with acquire (2)
     atomic::store(&run_core_started_flag, u8(1), atomic::RELEASE);
 
     init_fpu();
