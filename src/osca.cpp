@@ -271,61 +271,65 @@ auto static tick = 0u;
 
     kernel::core::interrupts_enable();
 
-    u32* fb = ptr<u32>(kernel::allocate_pages(
-        kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
+    // u32* fb = ptr<u32>(kernel::allocate_pages(
+    //     kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
+    //
+    // struct FractalJob {
+    //     u32* fb;
+    //     u32 width;
+    //     u32 height;
+    //     u32 stride;
+    //     u32 y_start;
+    //     u32 y_end;
+    //     u32 iteration;
+    //     auto run() -> void {
+    //         fb += y_start * stride;
+    //         for (auto y = y_start; y < y_end; ++y) {
+    //             for (auto x = 0u; x < width; ++x) {
+    //                 *fb = (y << 8) + x + iteration;
+    //                 ++fb;
+    //             }
+    //             fb += stride - width;
+    //         }
+    //     }
+    // };
+    //
+    // auto iteration = 0u;
+    // auto job_count = kernel::core_count;
+    // auto dy = kernel::frame_buffer.height / job_count;
+    // auto current_tick = tick;
+    // auto frame_no = 0u;
+    // auto fps = 0u;
+    // while (true) {
+    //     auto y = 0u;
+    //     for (auto i = 0u; i < job_count; ++i) {
+    //         jobs.add<FractalJob>(
+    //             fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
+    //             kernel::frame_buffer.stride, y, y + dy, iteration);
+    //         y += dy;
+    //     }
+    //     ++iteration;
+    //
+    //     jobs.wait_idle();
+    //
+    //     memcpy(kernel::frame_buffer.pixels, fb,
+    //            kernel::frame_buffer.height * kernel::frame_buffer.stride *
+    //                sizeof(u32));
+    //
+    //     print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
+    //
+    //     ++frame_no;
+    //     if (tick - current_tick == 20) {
+    //         fps = frame_no / 20;
+    //         current_tick = tick;
+    //         kernel::serial::print("fps: ");
+    //         kernel::serial::print_dec(fps);
+    //         kernel::serial::print("\n");
+    //     }
+    // }
 
-    struct FractalJob {
-        u32* fb;
-        u32 width;
-        u32 height;
-        u32 stride;
-        u32 y_start;
-        u32 y_end;
-        u32 iteration;
-        auto run() -> void {
-            fb += y_start * stride;
-            for (auto y = y_start; y < y_end; ++y) {
-                for (auto x = 0u; x < width; ++x) {
-                    *fb = (y << 8) + x + iteration;
-                    ++fb;
-                }
-                fb += stride - width;
-            }
-        }
-    };
-
-    auto iteration = 0u;
-    auto job_count = kernel::core_count;
-    auto dy = kernel::frame_buffer.height / job_count;
-    auto current_tick = tick;
-    auto frame_no = 0u;
-    auto fps = 0u;
     while (true) {
-        auto y = 0u;
-        for (auto i = 0u; i < job_count; ++i) {
-            jobs.add<FractalJob>(
-                fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
-                kernel::frame_buffer.stride, y, y + dy, iteration);
-            y += dy;
-        }
-        ++iteration;
-
-        jobs.wait_idle();
-
-        memcpy(kernel::frame_buffer.pixels, fb,
-               kernel::frame_buffer.height * kernel::frame_buffer.stride *
-                   sizeof(u32));
-
-        print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
-
-        ++frame_no;
-        if (tick - current_tick == 20) {
-            fps = frame_no / 20;
-            current_tick = tick;
-            kernel::serial::print("fps: ");
-            kernel::serial::print_dec(fps);
-            kernel::serial::print("\n");
-        }
+        kernel::core::pause();
     }
 }
 
