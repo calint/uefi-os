@@ -832,6 +832,27 @@ auto inline init_cores() {
 
 } // namespace
 
+namespace kernel {
+
+// pops zeroed pages
+auto allocate_pages(u64 const num_pages) -> void* {
+    auto const bytes = num_pages * 4096;
+
+    // ensure heap has at least one 4k page remaining
+    if (heap.size < bytes) {
+        serial::print("error: out of memory when allocating pages\n");
+        panic(0xff'ff'00'00); // red screen: fatal
+    }
+
+    auto* const p = heap.start;
+    heap.start = ptr_offset<void>(heap.start, bytes);
+    heap.size -= bytes;
+    memset(p, 0, bytes);
+    return p;
+}
+
+} // namespace kernel
+
 [[noreturn]] auto kernel::start() -> void {
     init_serial();
     serial::print("serial initiated\n");

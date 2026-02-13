@@ -1,5 +1,6 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
+#include "kernel.hpp"
 
 namespace {
 
@@ -44,7 +45,7 @@ auto print_string(u32 const col, u32 const row, u32 const color,
 
 auto print_hex(u32 col, u32 const row, u32 const color, u64 const val,
                u32 const scale = 1) -> void {
-    char constexpr hex_chars[]{"0123456789ABCDEF"};
+    char constexpr static hex_chars[]{"0123456789ABCDEF"};
     for (auto i = 60; i >= 0; i -= 4) {
         draw_char(col, row, color, hex_chars[(val >> i) & 0xf], scale);
         col++;
@@ -52,6 +53,33 @@ auto print_hex(u32 col, u32 const row, u32 const color, u64 const val,
             draw_char(col, row, color, '_', scale);
             col++;
         }
+    }
+}
+
+auto print_dec(u32 col, u32 const row, u32 const color, u64 val,
+               u32 const scale = 1) -> void {
+    // case for zero
+    if (val == 0) {
+        draw_char(col, row, color, '0', scale);
+        return;
+    }
+
+    // u64 max is 20 digits
+    u8 buffer[20];
+    auto i = 0u;
+
+    // extract digits in reverse order
+    while (val > 0) {
+        buffer[i] = u8('0' + (val % 10));
+        val /= 10;
+        ++i;
+    }
+
+    // print the buffer backwards
+    while (i > 0) {
+        --i;
+        draw_char(col, row, color, char(buffer[i]), scale);
+        ++col;
     }
 }
 
@@ -174,6 +202,8 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
+auto static tick = 0u;
+
 [[noreturn]] auto start() -> void {
     kernel::serial::print("osca x64 kernel is running\n");
 
@@ -241,13 +271,65 @@ namespace osca {
 
     kernel::core::interrupts_enable();
 
+    u32* fb = ptr<u32>(kernel::allocate_pages(
+        kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
+
+    struct FractalJob {
+        u32* fb;
+        u32 width;
+        u32 height;
+        u32 stride;
+        u32 y_start;
+        u32 y_end;
+        u32 iteration;
+        auto run() -> void {
+            fb += y_start * stride;
+            for (auto y = y_start; y < y_end; ++y) {
+                for (auto x = 0u; x < width; ++x) {
+                    *fb = (y << 8) + x + iteration;
+                    ++fb;
+                }
+                fb += stride - width;
+            }
+        }
+    };
+
+    auto iteration = 0u;
+    auto job_count = kernel::core_count;
+    auto dy = kernel::frame_buffer.height / job_count;
+    auto current_tick = tick;
+    auto frame_no = 0u;
+    auto fps = 0u;
     while (true) {
-        kernel::core::halt();
+        auto y = 0u;
+        for (auto i = 0u; i < job_count; ++i) {
+            jobs.add<FractalJob>(
+                fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
+                kernel::frame_buffer.stride, y, y + dy, iteration);
+            y += dy;
+        }
+        ++iteration;
+
+        jobs.wait_idle();
+
+        memcpy(kernel::frame_buffer.pixels, fb,
+               kernel::frame_buffer.height * kernel::frame_buffer.stride *
+                   sizeof(u32));
+
+        print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
+
+        ++frame_no;
+        if (tick - current_tick == 20) {
+            fps = frame_no / 20;
+            current_tick = tick;
+            kernel::serial::print("fps: ");
+            kernel::serial::print_dec(fps);
+            kernel::serial::print("\n");
+        }
     }
 }
 
 auto on_timer() -> void {
-    auto static tick = 0u;
 
     ++tick;
 

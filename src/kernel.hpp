@@ -60,6 +60,8 @@ auto inline inb(u16 const port) -> u8 {
     return result;
 }
 
+auto allocate_pages(u64 num_pages) -> void*;
+
 [[noreturn]] auto start() -> void;
 
 } // namespace kernel
