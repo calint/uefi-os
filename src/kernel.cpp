@@ -624,7 +624,7 @@ u8 volatile static run_core_started_flag;
 
     init_fpu();
     init_gdt();
-    // init_idt();
+    // note: no init_idt_core because of 0 tolerance to program fault
 
     // find this core index
     auto const apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
