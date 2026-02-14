@@ -499,7 +499,7 @@ auto static tick = 0u;
                    sizeof(u32));
 
         ++fps_frame;
-        // ++fractal_zoom;
+        //++fractal_zoom;
 
         auto const dt = tick - fps_tick;
         auto constexpr static seconds_per_fps_calculation = 10;
