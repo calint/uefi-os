@@ -11,6 +11,7 @@ concept is_job = requires(T t) {
     { t.run() } -> is_same<void>;
 };
 
+namespace queue {
 //
 // single-producer, multi-consumer lock-free job queue
 //
@@ -23,7 +24,7 @@ concept is_job = requires(T t) {
 //   * max job parameters size: 48 bytes
 //   * queue capacity: configurable through template argument (power of 2)
 //
-template <u32 QueueSize = 256> class QueueSpmc final {
+template <u32 QueueSize = 256> class Spmc final {
     static_assert(
         (QueueSize & (QueueSize - 1)) == 0 && QueueSize > 1,
         "QueueSize must be a power of 2 for efficient modulo operations");
@@ -183,7 +184,7 @@ template <u32 QueueSize = 256> class QueueSpmc final {
 //   * max job parameters size: 48 bytes
 //   * queue capacity: configurable through template argument (power of 2)
 //
-template <u32 QueueSize = 256> class QueueMpmc final {
+template <u32 QueueSize = 256> class Mpmc final {
     static_assert(
         (QueueSize & (QueueSize - 1)) == 0 && QueueSize > 1,
         "QueueSize must be a power of 2 for efficient modulo operations");
@@ -359,6 +360,8 @@ template <u32 QueueSize = 256> class QueueMpmc final {
     }
 };
 
-QueueMpmc<256> inline jobs;
+} // namespace queue
+
+queue::Mpmc<256> inline jobs;
 
 } // namespace osca
