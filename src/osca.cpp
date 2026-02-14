@@ -211,7 +211,7 @@ class Printer {
     u32 scale_ = 1;
     u32 defcol_ = 0;
 
-    auto draw_char(char c) -> void {
+    auto drwchr(char c) -> void {
 
         auto fb = fb_.pixels;
         auto stride = fb_.stride;
@@ -222,16 +222,16 @@ class Printer {
         for (auto i = 0u; i < 8; ++i) {
             for (auto j = 0u; j < 8; ++j) {
                 if (glyph[i] & (1 << (7 - j))) {
-                    draw_rect(col_ * 8 * scale_ + j * scale_,
-                              row_ * 8 * scale_ + i * scale_, scale_, scale_,
-                              color_);
+                    drwrct(col_ * 8 * scale_ + j * scale_,
+                           row_ * 8 * scale_ + i * scale_, scale_, scale_,
+                           color_);
                 }
             }
         }
     }
 
-    auto draw_rect(u32 const x, u32 const y, u32 const width, u32 const height,
-                   u32 const color) -> void {
+    auto drwrct(u32 const x, u32 const y, u32 const width, u32 const height,
+                u32 const color) -> void {
 
         for (auto i = y; i < y + height; ++i) {
             for (auto j = x; j < x + width; ++j) {
@@ -263,7 +263,7 @@ class Printer {
 
     auto p(char const* str) -> Printer& {
         while (*str) {
-            draw_char(*str);
+            drwchr(*str);
             ++str;
             ++col_;
         }
@@ -273,7 +273,7 @@ class Printer {
     auto p(u64 val) -> Printer& {
         // case for zero
         if (val == 0) {
-            draw_char('0');
+            drwchr('0');
             return *this;
         }
 
@@ -291,7 +291,7 @@ class Printer {
         // print the buffer backwards
         while (i > 0) {
             --i;
-            draw_char(char(buffer[i]));
+            drwchr(char(buffer[i]));
             ++col_;
         }
         return *this;
@@ -300,10 +300,10 @@ class Printer {
     auto p_hex(u64 const val) -> Printer& {
         char constexpr static hex_chars[]{"0123456789ABCDEF"};
         for (auto i = 60; i >= 0; i -= 4) {
-            draw_char(hex_chars[(val >> i) & 0xf]);
+            drwchr(hex_chars[(val >> i) & 0xf]);
             ++col_;
             if (i != 0 && (i % 16) == 0) {
-                draw_char('_');
+                drwchr('_');
                 ++col_;
             }
         }
