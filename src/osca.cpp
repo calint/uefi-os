@@ -370,8 +370,13 @@ auto static tick = 0u;
     //     kernel::core::pause();
     // }
 
-    u32* fb = ptr<u32>(kernel::allocate_pages(
-        kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
+    auto const frame_buffer_pages_count =
+        (kernel::frame_buffer.height * kernel::frame_buffer.stride + 4095) /
+        4096;
+    kernel::serial::print("frame buffer pages: ");
+    kernel::serial::print_dec(frame_buffer_pages_count);
+    kernel::serial::print("\n");
+    u32* fb = ptr<u32>(kernel::allocate_pages(frame_buffer_pages_count));
 
     struct FractalJob {
         u32* fb;
