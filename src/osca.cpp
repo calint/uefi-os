@@ -480,8 +480,9 @@ auto static tick = 0u;
 
         ++fps_frame;
 
-        if (tick - fps_tick == 20) {
-            fps = fps_frame / 20;
+        auto const dt = tick - fps_tick;
+        if (dt >= 20) {
+            fps = fps_frame / dt;
             fps_frame = 0;
             fps_tick = tick;
             job_count = (job_count % 32) + 1;
