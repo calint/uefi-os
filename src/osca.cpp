@@ -458,7 +458,7 @@ auto static tick = 0u;
         for (auto i = 0u; i < job_count; ++i) {
             // if height isn't perfectly divisible, the last core takes the
             // remainder
-            u32 y_end =
+            auto y_end =
                 (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
 
             jobs.add<FractalJob>(
