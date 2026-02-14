@@ -262,7 +262,7 @@ template <u32 QueueSize = 256> class Mpmc final {
             }
 
             // (8) claim slot and release paired with (9)
-            // note: release ensures wait_idle observes this head update
+            // note: release ensures `wait_idle` sees the `head_` update
             if (atomic::compare_exchange(&head_, &h, h + 1, true,
                                          atomic::RELEASE, atomic::RELAXED)) {
                 // prepare slot
