@@ -12,6 +12,7 @@ concept is_job = requires(T t) {
 };
 
 namespace queue {
+
 //
 // single-producer, multi-consumer lock-free job queue
 //
