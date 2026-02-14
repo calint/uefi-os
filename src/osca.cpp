@@ -202,6 +202,110 @@ auto test_simd_support() -> void {
 
 namespace osca {
 
+class Printer {
+    kernel::FrameBuffer fb_;
+    u32 row_ = 0;
+    u32 col_ = 0;
+    u32 color_ = 0xff'ff'ff'ff;
+    u32 scale_ = 1;
+    u32 defcol_ = 0;
+
+    auto draw_char(char c) -> void {
+
+        auto fb = fb_.pixels;
+        auto stride = fb_.stride;
+        if (c < 32 || c > 126) {
+            c = '?';
+        }
+        auto glyph = ASCII_FONT[u8(c)];
+        for (auto i = 0u; i < 8; ++i) {
+            for (auto j = 0u; j < 8; ++j) {
+                if (glyph[i] & (1 << (7 - j))) {
+                    draw_rect(col_ * 8 * scale_ + j * scale_,
+                              row_ * 8 * scale_ + i * scale_, scale_, scale_,
+                              color_);
+                }
+            }
+        }
+    }
+
+  public:
+    Printer(kernel::FrameBuffer fb) : fb_{fb} {}
+
+    auto position(u32 const col, u32 const row) -> Printer& {
+        row_ = row;
+        defcol_ = col_ = col;
+        return *this;
+    }
+
+    auto color(u32 const color) -> Printer& {
+        color_ = color;
+        return *this;
+    }
+
+    auto color() const -> u32 { return color_; }
+
+    auto scale(u32 const s) -> Printer& {
+        scale_ = s;
+        return *this;
+    }
+
+    auto p(char const* str) -> Printer& {
+        while (*str) {
+            draw_char(*str);
+            ++str;
+            ++col_;
+        }
+        return *this;
+    }
+
+    auto p(u64 val) -> Printer& {
+        // case for zero
+        if (val == 0) {
+            draw_char('0');
+            return *this;
+        }
+
+        // u64 max is 20 digits
+        u8 buffer[20];
+        auto i = 0u;
+
+        // extract digits in reverse order
+        while (val > 0) {
+            buffer[i] = u8('0' + (val % 10));
+            val /= 10;
+            ++i;
+        }
+
+        // print the buffer backwards
+        while (i > 0) {
+            --i;
+            draw_char(char(buffer[i]));
+            ++col_;
+        }
+        return *this;
+    }
+
+    auto p_hex(u64 const val) -> Printer& {
+        char constexpr static hex_chars[]{"0123456789ABCDEF"};
+        for (auto i = 60; i >= 0; i -= 4) {
+            draw_char(hex_chars[(val >> i) & 0xf]);
+            ++col_;
+            if (i != 0 && (i % 16) == 0) {
+                draw_char('_');
+                ++col_;
+            }
+        }
+        return *this;
+    }
+
+    auto nl() -> Printer& {
+        col_ = defcol_;
+        ++row_;
+        return *this;
+    }
+};
+
 auto static tick = 0u;
 
 [[noreturn]] auto start() -> void {
@@ -221,166 +325,165 @@ auto static tick = 0u;
     auto main_color = 0xff'ff'ff'ffu;
     auto alt_color = 0xc0'c0'c0'c0u;
     auto color = main_color;
-    print_string(col_lbl, row, 0x00ffff00, "osca x64", 3);
-    ++row;
-    auto kernel_addr = u64(kernel::start);
-    print_string(col_lbl, row, color, "kernel: ", 3);
-    print_hex(col_val, row, color, kernel_addr, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "mmap: ", 3);
-    print_hex(col_val, row, color, u64(kernel::memory_map.buffer), 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "gfx: ", 3);
-    print_hex(col_val, row, color, u64(kernel::frame_buffer.pixels), 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "kbd gsi: ", 3);
-    print_hex(col_val, row, color, kernel::keyboard_config.gsi, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "kbd flgs: ", 3);
-    print_hex(col_val, row, color, kernel::keyboard_config.flags, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "apic io: ", 3);
-    print_hex(col_val, row, color, u64(kernel::apic.io), 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "lapic: ", 3);
-    print_hex(col_val, row, color, u64(kernel::apic.local), 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    auto lapic_id =
-        (kernel::apic.local[0x020 / 4] >> 24) & 0xff; // local apic id register
-    print_string(col_lbl, row, color, "lapic id: ", 3);
-    print_hex(col_val, row, color, lapic_id, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "heapmem: ", 3);
-    print_hex(col_val, row, color, kernel::heap.size, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
-    print_string(col_lbl, row, color, "cores: ", 3);
-    print_hex(col_val, row, color, kernel::core_count, 3);
-    color = color == main_color ? alt_color : main_color;
-    ++row;
+
+    Printer pr = {kernel::frame_buffer};
+
+    pr.scale(3).color(0x00'ff'ff'00).position(1u, 2u);
+    pr.p("osca x64").nl();
+    pr.color(main_color);
+
+    pr.p("         kernel: ").p_hex(u64(kernel::start)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("     memory map: ").p_hex(u64(kernel::memory_map.buffer)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("   frame buffer: ").p_hex(u64(kernel::frame_buffer.pixels)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("   keyboard gsi: ").p(kernel::keyboard_config.gsi).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p(" keyboard flags: ").p_hex(kernel::keyboard_config.flags).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("        apic io: ").p_hex(u64(kernel::apic.io)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("     apic local: ").p_hex(u64(kernel::apic.local)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("         cpu id: ").p(kernel::apic.local[0x020 / 4] >> 24).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("      heap size: ").p_hex(kernel::heap.size).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("          cores: ").p(kernel::core_count).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
 
     test_simd_support();
 
     kernel::core::interrupts_enable();
-
-    u32* fb = ptr<u32>(kernel::allocate_pages(
-        kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
-
-    struct FractalJob {
-        u32* fb;
-        u32 width;
-        u32 height;
-        u32 stride;
-        u32 y_start;
-        u32 y_end;
-        u32 frame; // Use frame for zoom level
-
-        auto run() -> void {
-            // Target coordinates to zoom into
-            auto const target_re = -0.743643f;
-            auto const target_im = 0.131825f;
-
-            // Calculate zoom scale: shrinks as frame increases
-            auto zoom = 1.0f;
-            for (auto i = 0u; i < (frame % 500u); ++i) {
-                zoom *= 0.95f;
-            }
-
-            // Define the viewport based on the current zoom
-            auto const base_w = 3.5f;
-            auto const base_h = 2.0f;
-            auto const min_re = target_re - (base_w * zoom) / 2.0f;
-            auto const max_re = target_re + (base_w * zoom) / 2.0f;
-            auto const min_im = target_im - (base_h * zoom) / 2.0f;
-            auto const max_im = target_im + (base_h * zoom) / 2.0f;
-
-            auto const re_factor = (max_re - min_re) / float(width - 1u);
-            auto const im_factor = (max_im - min_im) / float(height - 1u);
-
-            for (auto y = y_start; y < y_end; ++y) {
-                auto c_im = max_im - float(y) * im_factor;
-                for (auto x = 0u; x < width; ++x) {
-                    auto c_re = min_re + float(x) * re_factor;
-
-                    auto z_re = c_re, z_im = c_im;
-                    auto iteration = 0u;
-                    // Increase max iterations as you zoom for better detail
-                    auto const max_iterations = 128u;
-
-                    while ((z_re * z_re + z_im * z_im <= 4.0f) &&
-                           (iteration < max_iterations)) {
-                        auto next_re = z_re * z_re - z_im * z_im + c_re;
-                        auto next_im = 2.0f * z_re * z_im + c_im;
-                        z_re = next_re;
-                        z_im = next_im;
-                        ++iteration;
-                    }
-
-                    auto color = 0u;
-                    if (iteration < max_iterations) {
-                        // Dynamic coloring: blue shifts based on zoom/frame
-                        auto blue = (iteration * 255u / max_iterations) & 0xFFu;
-                        auto red = (frame / 2u) & 0xFFu;
-                        color = (red << 16u) | (blue << 8u) | 255u;
-                    } else {
-                        color = 0x00000000;
-                    }
-
-                    fb[y * stride + x] = color;
-                }
-            }
-        }
-    };
-
-    auto frame_count = 0u;
-    auto job_count = 1u;
-    auto fps_tick = tick;
-    auto fps_frame = 0u;
-    auto fps = 0u;
-
     while (true) {
-        auto dy = kernel::frame_buffer.height / job_count;
-        auto y = 0u;
-        for (auto i = 0u; i < job_count; ++i) {
-            // If height isn't perfectly divisible, the last core takes the
-            // remainder
-            u32 y_end =
-                (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
-
-            jobs.add<FractalJob>(
-                fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
-                kernel::frame_buffer.stride, y, y_end, frame_count);
-            y = y_end;
-        }
-        ++frame_count;
-
-        jobs.wait_idle();
-
-        memcpy(kernel::frame_buffer.pixels, fb,
-               kernel::frame_buffer.height * kernel::frame_buffer.stride *
-                   sizeof(u32));
-
-        print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
-
-        ++fps_frame;
-        if (tick - fps_tick == 20) {
-            fps = fps_frame / 20;
-            fps_frame = 0;
-            fps_tick = tick;
-            ++job_count;
-            kernel::serial::print("fps: ");
-            kernel::serial::print_dec(fps);
-            kernel::serial::print("\n");
-        }
+        kernel::core::pause();
     }
+
+    //
+    // test_simd_support();
+    //
+    // kernel::core::interrupts_enable();
+    //
+    // u32* fb = ptr<u32>(kernel::allocate_pages(
+    //     kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
+    //
+    // struct FractalJob {
+    //     u32* fb;
+    //     u32 width;
+    //     u32 height;
+    //     u32 stride;
+    //     u32 y_start;
+    //     u32 y_end;
+    //     u32 frame; // Use frame for zoom level
+    //
+    //     auto run() -> void {
+    //         // Target coordinates to zoom into
+    //         auto const target_re = -0.743643f;
+    //         auto const target_im = 0.131825f;
+    //
+    //         // Calculate zoom scale: shrinks as frame increases
+    //         auto zoom = 1.0f;
+    //         for (auto i = 0u; i < (frame % 500u); ++i) {
+    //             zoom *= 0.95f;
+    //         }
+    //
+    //         // Define the viewport based on the current zoom
+    //         auto const base_w = 3.5f;
+    //         auto const base_h = 2.0f;
+    //         auto const min_re = target_re - (base_w * zoom) / 2.0f;
+    //         auto const max_re = target_re + (base_w * zoom) / 2.0f;
+    //         auto const min_im = target_im - (base_h * zoom) / 2.0f;
+    //         auto const max_im = target_im + (base_h * zoom) / 2.0f;
+    //
+    //         auto const re_factor = (max_re - min_re) / float(width - 1u);
+    //         auto const im_factor = (max_im - min_im) / float(height - 1u);
+    //
+    //         for (auto y = y_start; y < y_end; ++y) {
+    //             auto c_im = max_im - float(y) * im_factor;
+    //             for (auto x = 0u; x < width; ++x) {
+    //                 auto c_re = min_re + float(x) * re_factor;
+    //
+    //                 auto z_re = c_re, z_im = c_im;
+    //                 auto iteration = 0u;
+    //                 // Increase max iterations as you zoom for better detail
+    //                 auto const max_iterations = 128u;
+    //
+    //                 while ((z_re * z_re + z_im * z_im <= 4.0f) &&
+    //                        (iteration < max_iterations)) {
+    //                     auto next_re = z_re * z_re - z_im * z_im + c_re;
+    //                     auto next_im = 2.0f * z_re * z_im + c_im;
+    //                     z_re = next_re;
+    //                     z_im = next_im;
+    //                     ++iteration;
+    //                 }
+    //
+    //                 auto color = 0u;
+    //                 if (iteration < max_iterations) {
+    //                     // Dynamic coloring: blue shifts based on zoom/frame
+    //                     auto blue = (iteration * 255u / max_iterations) &
+    //                     0xFFu; auto red = (frame / 2u) & 0xFFu; color = (red
+    //                     << 16u) | (blue << 8u) | 255u;
+    //                 } else {
+    //                     color = 0x00000000;
+    //                 }
+    //
+    //                 fb[y * stride + x] = color;
+    //             }
+    //         }
+    //     }
+    // };
+    //
+    // auto frame_count = 0u;
+    // auto job_count = 1u;
+    // auto fps_tick = tick;
+    // auto fps_frame = 0u;
+    // auto fps = 0u;
+    //
+    // while (true) {
+    //     auto dy = kernel::frame_buffer.height / job_count;
+    //     auto y = 0u;
+    //     for (auto i = 0u; i < job_count; ++i) {
+    //         // If height isn't perfectly divisible, the last core takes the
+    //         // remainder
+    //         u32 y_end =
+    //             (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
+    //
+    //         jobs.add<FractalJob>(
+    //             fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
+    //             kernel::frame_buffer.stride, y, y_end, frame_count);
+    //         y = y_end;
+    //     }
+    //     ++frame_count;
+    //
+    //     jobs.wait_idle();
+    //
+    //     memcpy(kernel::frame_buffer.pixels, fb,
+    //            kernel::frame_buffer.height * kernel::frame_buffer.stride *
+    //                sizeof(u32));
+    //
+    //     print_dec(0, 0, 0xff'ff'ff'ff, fps, 3);
+    //
+    //     ++fps_frame;
+    //     if (tick - fps_tick == 20) {
+    //         fps = fps_frame / 20;
+    //         fps_frame = 0;
+    //         fps_tick = tick;
+    //         ++job_count;
+    //         kernel::serial::print("fps: ");
+    //         kernel::serial::print_dec(fps);
+    //         kernel::serial::print("\n");
+    //     }
+    // }
 
     // while (true) {
     //     kernel::core::pause();
