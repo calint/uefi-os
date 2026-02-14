@@ -484,7 +484,7 @@ auto static tick = 0u;
             fps = fps_frame / 20;
             fps_frame = 0;
             fps_tick = tick;
-            job_count = (job_count % 16) + 1;
+            job_count = (job_count % 32) + 1;
             kernel::serial::print("fps: ");
             kernel::serial::print_dec(fps);
             kernel::serial::print("\n");
