@@ -23,7 +23,7 @@ concept is_job = requires(T t) {
 //   * max job parameters size: 48 bytes
 //   * queue capacity: configurable through template argument (power of 2)
 //
-template <u32 QueueSize = 256> class Jobs final {
+template <u32 QueueSize = 256> class QueueSpmc final {
     static_assert(
         (QueueSize & (QueueSize - 1)) == 0 && QueueSize > 1,
         "QueueSize must be a power of 2 for efficient modulo operations");
@@ -172,6 +172,193 @@ template <u32 QueueSize = 256> class Jobs final {
     }
 };
 
-Jobs<256> inline jobs;
+//
+// multi-producer, multi-consumer lock-free job queue
+//
+// thread safety:
+//   * try_add(), add(): multiple producer threads safe
+//   * run_next(): multiple consumer threads safe
+//
+// constraints:
+//   * max job parameters size: 48 bytes
+//   * queue capacity: configurable through template argument (power of 2)
+//
+template <u32 QueueSize = 256> class QueueMpmc final {
+    static_assert(
+        (QueueSize & (QueueSize - 1)) == 0 && QueueSize > 1,
+        "QueueSize must be a power of 2 for efficient modulo operations");
+
+    using Func = auto (*)(void*) -> void;
+
+    static auto constexpr JOB_SIZE =
+        kernel::core::CACHE_LINE_SIZE - sizeof(Func) - 2 * sizeof(u32);
+
+    struct alignas(kernel::core::CACHE_LINE_SIZE) Entry {
+        u8 data[JOB_SIZE];
+        Func func;
+        u32 sequence;
+        u32 unused;
+    };
+
+    static_assert(sizeof(Entry) == kernel::core::CACHE_LINE_SIZE);
+
+    // note: different cache lines avoiding false sharing
+
+    // producer reads and writes, consumers atomically read and write
+    alignas(kernel::core::CACHE_LINE_SIZE) Entry queue_[QueueSize];
+
+    // producer reads and writes
+    alignas(kernel::core::CACHE_LINE_SIZE) u32 head_;
+
+    // consumers atomically read and write
+    alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
+
+    // producer atomically reads, consumers atomically write
+    alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
+
+    // make sure `completed_` is alone on cache line
+    u8 padding[kernel::core::CACHE_LINE_SIZE - sizeof(completed_)];
+
+  public:
+    // safe to run while threads are running attempting `run_next` if assumed
+    // zero initialized in data section
+    auto init() -> void {
+        head_ = 0;
+        tail_ = 0;
+        completed_ = 0;
+        for (auto i = 0u; i < QueueSize; ++i) {
+            queue_[i].sequence = i;
+        }
+    }
+
+    // called from multiple producers
+    // creates job into the queue
+    // returns:
+    //   true if job placed in queue
+    //   false if queue was full
+    template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
+        static_assert(sizeof(T) <= JOB_SIZE, "job too large for queue slot");
+
+        // optimistic load; slot availability at (1) and claimed at (8)
+        auto h = atomic::load(&head_, atomic::RELAXED);
+
+        while (true) {
+
+            auto& entry = queue_[h % QueueSize];
+
+            // (1) paired with release (2)
+            auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+
+            if (h > seq) {
+                // queue is full
+                return false;
+            }
+
+            if (seq > h) {
+                // competing producer took slot, try again
+                h = atomic::load(&head_, atomic::RELAXED);
+                continue;
+            }
+
+            // (8) claim slot and release paired with (9)
+            // note: release ensures wait_idle observes this head update
+            if (atomic::compare_exchange(&head_, &h, h + 1, true,
+                                         atomic::RELEASE, atomic::RELAXED)) {
+                // prepare slot
+                new (entry.data) T{fwd<Args>(args)...};
+                entry.func = [](void* data) {
+                    auto p = ptr<T>(data);
+                    p->run();
+                    p->~T();
+                };
+
+                // hand over the slot to be run
+                // (3) paired with acquire (4)
+                atomic::store(&entry.sequence, h + 1, atomic::RELEASE);
+
+                return true;
+            }
+
+            // competing producer took slot
+            // note: `h` is now what `head_` was at compare exchange
+        }
+    }
+
+    // called from multiple producers
+    // blocks while queue is full
+    template <is_job T, typename... Args> auto add(Args&&... args) -> void {
+        while (!try_add<T>(fwd<Args>(args)...)) {
+            kernel::core::pause();
+        }
+    }
+
+    // called from multiple consumers
+    // returns:
+    //   true if job was run
+    //   false if no job was run
+    auto run_next() -> bool {
+        // optimistic read; job data visible at (4), claimed at (7)
+        // note: if `t` is stale, either sequence check or CAS will safely fail
+        auto t = atomic::load(&tail_, atomic::RELAXED);
+        while (true) {
+            auto& entry = queue_[t % QueueSize];
+
+            // (4) paired with release (3)
+            auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+            if (seq != t + 1) {
+                // job not ready or `t` stale; caller will retry
+                return false;
+            }
+
+            // definitive acquire of job data before execution
+            // note: `weak` (true) because failure is retried in this loop
+            // (7) atomically claims this job from competing consumers
+            if (atomic::compare_exchange(&tail_, &t, t + 1, true,
+                                         atomic::ACQUIRE, atomic::RELAXED)) {
+                entry.func(entry.data);
+
+                // hand the slot back to the producer for the next lap
+                // (2) paired with acquire (1)
+                atomic::store(&entry.sequence, t + QueueSize, atomic::RELEASE);
+
+                // increment completed
+                // (5) paired with acquire (6)
+                atomic::add(&completed_, 1u, atomic::RELEASE);
+
+                return true;
+            }
+
+            // job was taken by competing core or spurious fail happened, try
+            // again without pause
+            // note: `t` is now the value of what `tail_` was at compare
+        }
+    }
+
+    // intended to be used in status displays etc
+    auto active_count() const -> u32 {
+        auto const head = atomic::load(&head_, atomic::RELAXED);
+        auto const completed = atomic::load(&completed_, atomic::RELAXED);
+        return head - completed;
+    }
+
+    // spin until all work is finished
+    auto wait_idle() const -> void {
+        while (true) {
+            // (9) paired with release (8)
+            auto const head = atomic::load(&head_, atomic::ACQUIRE);
+
+            // (6) paired with release (5)
+            auto const completed = atomic::load(&completed_, atomic::ACQUIRE);
+
+            if (head == completed) {
+                return;
+            }
+
+            kernel::core::pause();
+        }
+    }
+};
+
+QueueMpmc<256> inline jobs;
 
 } // namespace osca

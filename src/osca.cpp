@@ -515,19 +515,33 @@ auto static tick = 0u;
 auto on_timer() -> void {
     ++tick;
 
-    draw_rect(0, 0, 32, 32, tick << 6);
+    struct Job {
+        u32 t;
+        auto run() -> void { draw_rect(0, 0, 32, 32, t << 6); }
+    };
+
+    jobs.try_add<Job>(tick);
 }
 
-auto static kbd_intr_total = 0ull;
 auto on_keyboard(u8 const scancode) -> void {
+    auto static kbd_intr_total = 0ull;
+
     kbd_intr_total++;
 
-    draw_rect(32, 0, 32, 32, u32(scancode) << 16);
-    draw_rect(0, 20 * 8 * 3, kernel::frame_buffer.width, 4 * 8 * 3, 0);
-    print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
-    print_hex(12, 20, 0x0000ff00, kbd_intr_total, 3);
-    print_string(1, 21, 0x00ffffff, "scancode: ", 3);
-    print_hex(12, 21, 0x00ffffff, scancode, 3);
+    struct Job {
+        u64 total;
+        u8 scancode;
+        auto run() -> void {
+            draw_rect(32, 0, 32, 32, u32(scancode) << 16);
+            draw_rect(0, 20 * 8 * 3, kernel::frame_buffer.width, 4 * 8 * 3, 0);
+            print_string(1, 20, 0x0000ff00, "kbd intr: ", 3);
+            print_hex(12, 20, 0x0000ff00, total, 3);
+            print_string(1, 21, 0x00ffffff, "scancode: ", 3);
+            print_hex(12, 21, 0x00ffffff, scancode, 3);
+        }
+    };
+
+    jobs.try_add<Job>(kbd_intr_total, scancode);
 }
 
 [[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
