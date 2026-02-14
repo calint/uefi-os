@@ -5,3 +5,4 @@
 /trampoline.o
 /kernel.o
 /osca.o
+/qemu_crash.log

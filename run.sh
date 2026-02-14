@@ -49,4 +49,5 @@ clang++ -target x86_64-unknown-windows-msvc \
 qemu-system-x86_64 -enable-kvm -cpu host -m 16G -vga std -serial stdio \
     -smp 4,sockets=1,cores=2,threads=2 \
     -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/x64/OVMF_CODE.4m.fd \
-    -drive format=raw,file=fat:rw:esp # -full-screen
+    -drive format=raw,file=fat:rw:esp \
+    -d cpu_reset,int,guest_errors -no-reboot -D qemu_crash.log
