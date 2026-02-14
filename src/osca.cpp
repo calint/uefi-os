@@ -365,15 +365,11 @@ auto static tick = 0u;
     test_simd_support();
 
     kernel::core::interrupts_enable();
+
     while (true) {
         kernel::core::pause();
     }
 
-    //
-    // test_simd_support();
-    //
-    // kernel::core::interrupts_enable();
-    //
     // u32* fb = ptr<u32>(kernel::allocate_pages(
     //     kernel::frame_buffer.height * kernel::frame_buffer.stride / 4096));
     //
@@ -483,10 +479,6 @@ auto static tick = 0u;
     //         kernel::serial::print_dec(fps);
     //         kernel::serial::print("\n");
     //     }
-    // }
-
-    // while (true) {
-    //     kernel::core::pause();
     // }
 }
 
