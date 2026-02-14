@@ -1,5 +1,6 @@
 #include "osca.hpp"
 #include "ascii_font_8x8.hpp"
+#include "config.hpp"
 #include "kernel.hpp"
 
 namespace {
@@ -481,7 +482,8 @@ auto static tick = 0u;
         ++fps_frame;
 
         auto const dt = tick - fps_tick;
-        if (dt >= 20) {
+        auto constexpr static seconds_per_fps_calculation = 10;
+        if (dt >= config::TIMER_FREQUENCY_HZ * seconds_per_fps_calculation) {
             fps = fps_frame / dt;
             fps_frame = 0;
             fps_tick = tick;
