@@ -230,6 +230,16 @@ class Printer {
         }
     }
 
+    auto draw_rect(u32 const x, u32 const y, u32 const width, u32 const height,
+                   u32 const color) -> void {
+
+        for (auto i = y; i < y + height; ++i) {
+            for (auto j = x; j < x + width; ++j) {
+                fb_.pixels[i * kernel::frame_buffer.stride + j] = color;
+            }
+        }
+    }
+
   public:
     Printer(kernel::FrameBuffer fb) : fb_{fb} {}
 
@@ -376,10 +386,16 @@ auto static tick = 0u;
     kernel::serial::print("frame buffer pages: ");
     kernel::serial::print_dec(frame_buffer_pages_count);
     kernel::serial::print("\n");
-    u32* fb = ptr<u32>(kernel::allocate_pages(frame_buffer_pages_count));
+    u32* pixels = ptr<u32>(kernel::allocate_pages(frame_buffer_pages_count));
+
+    kernel::FrameBuffer fb = kernel::frame_buffer;
+    fb.pixels = pixels;
+
+    Printer pr = {fb};
+    pr.scale(3);
 
     struct FractalJob {
-        u32* fb;
+        u32* pixels;
         u32 width;
         u32 height;
         u32 stride;
@@ -438,17 +454,17 @@ auto static tick = 0u;
                         color = 0x00000000;
                     }
 
-                    fb[y * stride + x] = color;
+                    pixels[y * stride + x] = color;
                 }
             }
         }
     };
 
-    auto frame_count = 0u;
     auto job_count = 1u;
     auto fps_tick = tick;
     auto fps_frame = 0u;
     auto fps = 0u;
+    auto fractal_zoom = 0u;
 
     kernel::core::interrupts_enable();
 
@@ -462,21 +478,15 @@ auto static tick = 0u;
                 (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
 
             jobs.add<FractalJob>(
-                fb, kernel::frame_buffer.width, kernel::frame_buffer.height,
-                kernel::frame_buffer.stride, y, y_end, frame_count);
+                pixels, kernel::frame_buffer.width, kernel::frame_buffer.height,
+                kernel::frame_buffer.stride, y, y_end, fractal_zoom);
 
             y = y_end;
         }
-        ++frame_count;
 
         jobs.wait_idle();
 
-        memcpy(kernel::frame_buffer.pixels, fb,
-               kernel::frame_buffer.height * kernel::frame_buffer.stride *
-                   sizeof(u32));
-
-        Printer pr = {kernel::frame_buffer};
-        pr.scale(3).position(1, 1);
+        pr.position(1, 1);
         pr.p("cores: ")
             .p(kernel::core_count)
             .p("   jobs: ")
@@ -484,12 +494,17 @@ auto static tick = 0u;
             .p("   fps: ")
             .p(fps);
 
+        memcpy(kernel::frame_buffer.pixels, pixels,
+               kernel::frame_buffer.height * kernel::frame_buffer.stride *
+                   sizeof(u32));
+
         ++fps_frame;
+        // ++fractal_zoom;
 
         auto const dt = tick - fps_tick;
         auto constexpr static seconds_per_fps_calculation = 10;
         if (dt >= config::TIMER_FREQUENCY_HZ * seconds_per_fps_calculation) {
-            fps = fps_frame / dt;
+            fps = fps_frame * config::TIMER_FREQUENCY_HZ / dt;
             fps_frame = 0;
             fps_tick = tick;
             job_count = (job_count % 32) + 1;
