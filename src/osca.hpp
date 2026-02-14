@@ -244,7 +244,6 @@ template <u32 QueueSize = 256> class Mpmc final {
         auto h = atomic::load(&head_, atomic::RELAXED);
 
         while (true) {
-
             auto& entry = queue_[h % QueueSize];
 
             // (1) paired with release (2)
