@@ -383,9 +383,6 @@ auto static tick = 0u;
     auto const frame_buffer_pages_count =
         (kernel::frame_buffer.height * kernel::frame_buffer.stride + 4095) /
         4096;
-    kernel::serial::print("frame buffer pages: ");
-    kernel::serial::print_dec(frame_buffer_pages_count);
-    kernel::serial::print("\n");
     u32* pixels = ptr<u32>(kernel::allocate_pages(frame_buffer_pages_count));
 
     kernel::FrameBuffer fb = kernel::frame_buffer;
