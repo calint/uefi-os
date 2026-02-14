@@ -493,7 +493,11 @@ auto static tick = 0u;
     }
 }
 
-auto on_timer() -> void { ++tick; }
+auto on_timer() -> void {
+    ++tick;
+
+    draw_rect(0, 0, 32, 32, tick << 6);
+}
 
 auto static kbd_intr_total = 0ull;
 auto on_keyboard(u8 const scancode) -> void {
