@@ -161,8 +161,8 @@ template <u32 QueueSize = 256> class Spmc final {
                 return true;
             }
 
-            // job was taken by competing core or spurious fail happened, try
-            // again without pause
+            // job was taken by competing consumer or spurious fail happened,
+            // try again without pause
             // note: `t` is now the value of what `tail_` was at compare
         }
     }
@@ -360,8 +360,8 @@ template <u32 QueueSize = 256> class Mpmc final {
                 return true;
             }
 
-            // job was taken by competing core or spurious fail happened, try
-            // again without pause
+            // job was taken by competing consumer or spurious fail happened,
+            // try again without pause
             // note: `t` is now the value of what `tail_` was at compare
         }
     }
