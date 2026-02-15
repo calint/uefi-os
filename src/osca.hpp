@@ -243,7 +243,8 @@ template <u32 QueueSize = 256> class Mpmc final {
     template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE, "job too large for queue slot");
 
-        // optimistic load; if value is stale claiming it at (8) fails
+        // optimistic read; job data visible at (1) and claimed at (8)
+        // note: if `h` is stale either sequence check or CAS fails safely
         auto h = atomic::load(&head_, atomic::RELAXED);
 
         while (true) {
