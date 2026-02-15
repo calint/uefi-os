@@ -313,10 +313,21 @@ template <u32 QueueSize = 256> class Mpmc final {
 
             // (4) paired with release (3)
             auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
-            if (seq != t + 1) {
-                // job not ready or `t` stale; caller will retry
+
+            auto const diff = i32(seq) - i32(t + 1);
+
+            if (diff < 0) {
+                // job not ready (producer hasn't reached here)
                 return false;
             }
+
+            if (diff > 0) {
+                // `t` is stale, refresh and loop
+                t = atomic::load(&tail_, atomic::RELAXED);
+                continue;
+            }
+
+            // job is ready to run, try to claim it
 
             // definitive acquire of job data before execution
             // note: `weak` (true) because failure is retried in this loop
@@ -346,7 +357,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     auto active_count() const -> u32 {
         auto const head = atomic::load(&head_, atomic::RELAXED);
         auto const completed = atomic::load(&completed_, atomic::RELAXED);
-        return head - completed;
+        return i32(head) - i32(completed);
     }
 
     // spin until all work is finished
