@@ -185,8 +185,6 @@ template <u32 QueueSize = 256> class Spmc final {
 // constraints:
 //  * max job parameters size: 48 bytes
 //  * queue capacity: configurable through template argument (power of 2)
-//
-// note:
 //  * safe to be interrupted and interrupt to add job
 //
 template <u32 QueueSize = 256> class Mpmc final {
@@ -245,7 +243,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE, "job too large for queue slot");
 
-        // optimistic load; slot availability at (1) and claimed at (8)
+        // optimistic load; if value is stale claiming it at (8) fails
         auto h = atomic::load(&head_, atomic::RELAXED);
 
         while (true) {
@@ -254,16 +252,21 @@ template <u32 QueueSize = 256> class Mpmc final {
             // (1) paired with release (2)
             auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
-            if (h > seq) {
-                // queue is full
+            // signed difference handles u32 wrap-around gracefully
+            auto const diff = i32(seq) - i32(h);
+
+            if (diff < 0) {
+                // seq is behind h -> queue is full
                 return false;
             }
 
-            if (seq > h) {
-                // competing producer took slot, try again
+            if (diff > 0) {
+                // seq is ahead of h -> competing producer took slot, try again
                 h = atomic::load(&head_, atomic::RELAXED);
                 continue;
             }
+
+            // slot is free -> try to claim it
 
             // (8) claim slot and release paired with (9)
             // note: release ensures `wait_idle` sees the `head_` update
