@@ -6,12 +6,12 @@
 
 namespace osca {
 
+namespace queue {
+
 template <typename T>
 concept is_job = requires(T t) {
     { t.run() } -> is_same<void>;
 };
-
-namespace queue {
 
 //
 // single-producer, multi-consumer lock-free job queue
