@@ -256,17 +256,17 @@ template <u32 QueueSize = 256> class Mpmc final {
             auto const diff = i32(seq) - i32(h);
 
             if (diff < 0) {
-                // seq is behind h -> queue is full
+                // `seq` is behind `h` -> queue is full
                 return false;
             }
 
             if (diff > 0) {
-                // seq is ahead of h -> competing producer took slot, try again
+                // `seq` is ahead of `h` -> competing producer took slot
                 h = atomic::load(&head_, atomic::RELAXED);
                 continue;
             }
 
-            // slot is free -> try to claim it
+            // `seq` is `h` -> slot is ready, try to claim it
 
             // (8) claim slot and release paired with (9)
             // note: release ensures `wait_idle` sees the `head_` update
