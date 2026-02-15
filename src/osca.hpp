@@ -17,13 +17,14 @@ namespace queue {
 // single-producer, multi-consumer lock-free job queue
 //
 // thread safety:
-//   * try_add(), add(): single producer thread only
-//   * run_next(): multiple consumer threads safe
-//   * wait_idle(): safe from producer thread
+//  * try_add(), add(): single producer thread only
+//  * run_next(): multiple consumer threads safe
+//  * wait_idle(): safe from producer thread
 //
 // constraints:
-//   * max job parameters size: 48 bytes
-//   * queue capacity: configurable through template argument (power of 2)
+//  * max job parameters size: 48 bytes
+//  * queue capacity: configurable through template argument (power of 2)
+//  * an interrupt that adds jobs must not happen in producer thread
 //
 template <u32 QueueSize = 256> class Spmc final {
     static_assert(
@@ -178,12 +179,15 @@ template <u32 QueueSize = 256> class Spmc final {
 // multi-producer, multi-consumer lock-free job queue
 //
 // thread safety:
-//   * try_add(), add(): multiple producer threads safe
-//   * run_next(): multiple consumer threads safe
+//  * try_add(), add(): multiple producer threads safe
+//  * run_next(): multiple consumer threads safe
 //
 // constraints:
-//   * max job parameters size: 48 bytes
-//   * queue capacity: configurable through template argument (power of 2)
+//  * max job parameters size: 48 bytes
+//  * queue capacity: configurable through template argument (power of 2)
+//
+// note:
+//  * safe to be interrupted and interrupt to add job
 //
 template <u32 QueueSize = 256> class Mpmc final {
     static_assert(
