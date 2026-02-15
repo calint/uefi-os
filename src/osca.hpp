@@ -255,15 +255,15 @@ template <u32 QueueSize = 256> class Mpmc final {
             // signed difference handles u32 wrap-around gracefully
             auto const diff = i32(seq) - i32(h);
 
-            if (diff < 0) {
-                // `seq` is behind `h` -> queue is full
-                return false;
-            }
-
             if (diff > 0) {
                 // `seq` is ahead of `h` -> competing producer took slot
                 h = atomic::load(&head_, atomic::RELAXED);
                 continue;
+            }
+
+            if (diff < 0) {
+                // `seq` is behind `h` -> queue is full
+                return false;
             }
 
             // `seq` is `h` -> slot is ready, try to claim it
