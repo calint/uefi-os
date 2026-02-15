@@ -127,14 +127,25 @@ template <u32 QueueSize = 256> class Spmc final {
 
             // (4) paired with release (3)
             auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
-            if (seq != t + 1) {
-                // job not ready or `t` stale; caller will retry
+
+            // signed difference correctly handles u32 wrap-around
+            auto const diff = i32(seq) - i32(t + 1);
+
+            if (diff < 0) {
+                // job not ready (producer hasn't reached here)
                 return false;
             }
 
-            // definitive acquire of job data before execution
-            // note: `weak` (true) because failure is retried in this loop
+            if (diff > 0) {
+                // `t` is stale, refresh and loop
+                t = atomic::load(&tail_, atomic::RELAXED);
+                continue;
+            }
+
+            // job is ready to be run, try to claim it
+
             // (7) atomically claims this job from competing consumers
+            // note: `weak` (true) because failure is retried in this loop
             if (atomic::compare_exchange(&tail_, &t, t + 1, true,
                                          atomic::ACQUIRE, atomic::RELAXED)) {
                 entry.func(entry.data);
@@ -253,7 +264,7 @@ template <u32 QueueSize = 256> class Mpmc final {
             // (1) paired with release (2)
             auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
-            // signed difference handles u32 wrap-around gracefully
+            // signed difference correctly handles u32 wrap-around
             auto const diff = i32(seq) - i32(h);
 
             if (diff > 0) {
@@ -315,6 +326,7 @@ template <u32 QueueSize = 256> class Mpmc final {
             // (4) paired with release (3)
             auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
+            // signed difference correctly handles u32 wrap-around
             auto const diff = i32(seq) - i32(t + 1);
 
             if (diff < 0) {
@@ -330,9 +342,8 @@ template <u32 QueueSize = 256> class Mpmc final {
 
             // job is ready to run, try to claim it
 
-            // definitive acquire of job data before execution
-            // note: `weak` (true) because failure is retried in this loop
             // (7) atomically claims this job from competing consumers
+            // note: `weak` (true) because failure is retried in this loop
             if (atomic::compare_exchange(&tail_, &t, t + 1, true,
                                          atomic::ACQUIRE, atomic::RELAXED)) {
                 entry.func(entry.data);
