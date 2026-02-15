@@ -159,7 +159,7 @@ template <u32 QueueSize = 256> class Spmc final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return head_ - atomic::load(&completed_, atomic::RELAXED);
+        return i32(head_) - i32(atomic::load(&completed_, atomic::RELAXED));
     }
 
     // called from producer
