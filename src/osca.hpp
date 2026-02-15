@@ -93,7 +93,7 @@ template <u32 QueueSize = 256> class Spmc final {
         // prepare slot
         new (entry.data) T{fwd<Args>(args)...};
         entry.func = [](void* data) {
-            auto p = ptr<T>(data);
+            auto* const p = ptr<T>(data);
             p->run();
             p->~T();
         };
@@ -126,10 +126,10 @@ template <u32 QueueSize = 256> class Spmc final {
             auto& entry = queue_[t % QueueSize];
 
             // (4) paired with release (3)
-            auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+            auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
             // signed difference correctly handles u32 wrap-around
-            auto const diff = i32(seq) - i32(t + 1);
+            auto const diff = i32(seq - (t + 1));
 
             if (diff < 0) {
                 // job not ready (producer hasn't reached here)
@@ -170,7 +170,8 @@ template <u32 QueueSize = 256> class Spmc final {
     // called from producer
     // intended to be used in status displays etc
     auto active_count() const -> u32 {
-        return i32(head_) - i32(atomic::load(&completed_, atomic::RELAXED));
+        auto const completed = atomic::load(&completed_, atomic::RELAXED);
+        return head_ - completed;
     }
 
     // called from producer
@@ -265,7 +266,7 @@ template <u32 QueueSize = 256> class Mpmc final {
             auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
             // signed difference correctly handles u32 wrap-around
-            auto const diff = i32(seq) - i32(h);
+            auto const diff = i32(seq - h);
 
             if (diff > 0) {
                 // `seq` is ahead of `h` -> competing producer took slot
@@ -287,7 +288,7 @@ template <u32 QueueSize = 256> class Mpmc final {
                 // prepare slot
                 new (entry.data) T{fwd<Args>(args)...};
                 entry.func = [](void* data) {
-                    auto p = ptr<T>(data);
+                    auto* const p = ptr<T>(data);
                     p->run();
                     p->~T();
                 };
@@ -324,10 +325,10 @@ template <u32 QueueSize = 256> class Mpmc final {
             auto& entry = queue_[t % QueueSize];
 
             // (4) paired with release (3)
-            auto seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+            auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
 
             // signed difference correctly handles u32 wrap-around
-            auto const diff = i32(seq) - i32(t + 1);
+            auto const diff = i32(seq - (t + 1));
 
             if (diff < 0) {
                 // job not ready (producer hasn't reached here)
@@ -369,7 +370,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     auto active_count() const -> u32 {
         auto const head = atomic::load(&head_, atomic::RELAXED);
         auto const completed = atomic::load(&completed_, atomic::RELAXED);
-        return i32(head) - i32(completed);
+        return head - completed;
     }
 
     // spin until all work is finished
