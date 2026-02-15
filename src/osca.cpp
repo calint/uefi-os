@@ -392,15 +392,17 @@ auto static tick = 0u;
     pr.scale(3);
 
     struct FractalJob {
-        u32* pixels;
-        u32 width;
-        u32 height;
-        u32 stride;
+        kernel::FrameBuffer fb;
         u32 y_start;
         u32 y_end;
         u32 frame; // use frame for zoom level
 
         auto run() -> void {
+            auto const width = fb.width;
+            auto const height = fb.height;
+            auto const stride = fb.stride;
+            auto* pixels = fb.pixels;
+
             // Target coordinates to zoom into
             auto const target_re = -0.743643f;
             auto const target_im = 0.131825f;
@@ -474,9 +476,7 @@ auto static tick = 0u;
             auto y_end =
                 (i == job_count - 1) ? kernel::frame_buffer.height : y + dy;
 
-            jobs.add<FractalJob>(
-                pixels, kernel::frame_buffer.width, kernel::frame_buffer.height,
-                kernel::frame_buffer.stride, y, y_end, fractal_zoom);
+            jobs.add<FractalJob>(fb, y, y_end, fractal_zoom);
 
             y = y_end;
         }
