@@ -127,6 +127,8 @@ template <u32 QueueSize = 256> class Spmc final {
 
             // (4) paired with release (3)
             auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+            // note: acquire ensures job data written by producer is visible
+            //       here
 
             // signed difference correctly handles u32 wrap-around
             auto const diff = i32(seq - (t + 1));
@@ -146,15 +148,18 @@ template <u32 QueueSize = 256> class Spmc final {
 
             // (7) atomically claims this job from competing consumers
             // note: `weak` (true) because failure is retried in this loop
+            // note: success is relaxed because data visibility is already
+            //       guaranteed by the acquire on `sequence` at (4)
             if (atomic::compare_exchange(&tail_, &t, t + 1, true,
-                                         atomic::ACQUIRE, atomic::RELAXED)) {
+                                         atomic::RELAXED, atomic::RELAXED)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
                 atomic::store(&entry.sequence, t + QueueSize, atomic::RELEASE);
 
-                // increment completed
+                // increment completed and release job side-effects for
+                // `wait_idle`
                 // (5) paired with acquire (6)
                 atomic::add(&completed_, 1u, atomic::RELEASE);
 
@@ -181,6 +186,7 @@ template <u32 QueueSize = 256> class Spmc final {
         // this loop
 
         // (6) paired with release (5)
+        // note: acquire is required to see job memory side-effects
         while (head_ != atomic::load(&completed_, atomic::ACQUIRE)) {
             kernel::core::pause();
         }
@@ -223,7 +229,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     // producer reads and writes, consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
-    // producer reads and writes
+    // producers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 head_;
 
     // consumers atomically read and write
@@ -282,9 +288,10 @@ template <u32 QueueSize = 256> class Mpmc final {
             // `seq` is `h` -> slot is ready, try to claim it
 
             // (8) claim slot and release paired with (9)
-            // note: release ensures `wait_idle` sees the `head_` update
+            // note: success is relaxed because data is published later via
+            //       `sequence`
             if (atomic::compare_exchange(&head_, &h, h + 1, true,
-                                         atomic::RELEASE, atomic::RELAXED)) {
+                                         atomic::RELAXED, atomic::RELAXED)) {
                 // prepare slot
                 new (entry.data) T{fwd<Args>(args)...};
                 entry.func = [](void* data) {
@@ -296,6 +303,8 @@ template <u32 QueueSize = 256> class Mpmc final {
                 // hand over the slot to be run
                 // (3) paired with acquire (4)
                 atomic::store(&entry.sequence, h + 1, atomic::RELEASE);
+                // note: release publishes job data and gives ownership to
+                //       consumer
 
                 return true;
             }
@@ -326,6 +335,8 @@ template <u32 QueueSize = 256> class Mpmc final {
 
             // (4) paired with release (3)
             auto const seq = atomic::load(&entry.sequence, atomic::ACQUIRE);
+            // note: acquire ensures job data written by producer is visible
+            //       here
 
             // signed difference correctly handles u32 wrap-around
             auto const diff = i32(seq - (t + 1));
@@ -345,15 +356,20 @@ template <u32 QueueSize = 256> class Mpmc final {
 
             // (7) atomically claims this job from competing consumers
             // note: `weak` (true) because failure is retried in this loop
+            // note: success is relaxed because data visibility is already
+            //       guaranteed by the acquire on `sequence` at (4)
             if (atomic::compare_exchange(&tail_, &t, t + 1, true,
-                                         atomic::ACQUIRE, atomic::RELAXED)) {
+                                         atomic::RELAXED, atomic::RELAXED)) {
                 entry.func(entry.data);
 
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
                 atomic::store(&entry.sequence, t + QueueSize, atomic::RELEASE);
+                // note: release makes the slot available for producer's next
+                //       lap
 
-                // increment completed
+                // increment completed and release job side-effects for
+                // `wait_idle`
                 // (5) paired with acquire (6)
                 atomic::add(&completed_, 1u, atomic::RELEASE);
 
@@ -376,10 +392,11 @@ template <u32 QueueSize = 256> class Mpmc final {
     // spin until all work is finished
     auto wait_idle() const -> void {
         while (true) {
-            // (9) paired with release (8)
-            auto const head = atomic::load(&head_, atomic::ACQUIRE);
+            auto const head = atomic::load(&head_, atomic::RELAXED);
+            // note: relaxed is safe; thread sees its own prior additions
 
             // (6) paired with release (5)
+            // note: acquire is required to see job memory side-effects
             auto const completed = atomic::load(&completed_, atomic::ACQUIRE);
 
             if (head == completed) {
