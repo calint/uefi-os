@@ -287,7 +287,7 @@ template <u32 QueueSize = 256> class Mpmc final {
 
             // `seq` is `h` -> slot is ready, try to claim it
 
-            // (8) claim slot and release paired with (9)
+            // (8) atomically claim slot from competing producers
             // note: success is relaxed because data is published later via
             //       `sequence`
             if (atomic::compare_exchange(&head_, &h, h + 1, true,
