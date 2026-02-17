@@ -547,7 +547,7 @@ auto on_keyboard(u8 const scancode) -> void {
 [[noreturn]] auto run_core([[maybe_unused]] u32 core_id) -> void {
     while (true) {
         if (!jobs.run_next()) {
-            // no job was run, queue possibly empty or job not ready. pause
+            // queue empty, pause
             kernel::core::pause();
         }
     }
