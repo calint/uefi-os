@@ -226,7 +226,7 @@ template <u32 QueueSize = 256> class Mpmc final {
 
     // note: different cache lines avoiding false sharing
 
-    // producer reads and writes, consumers atomically read and write
+    // producers atomically read and write, consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) Entry queue_[QueueSize];
 
     // producers atomically read and write
@@ -235,7 +235,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     // consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
 
-    // producer atomically reads, consumers atomically write
+    // single producer atomically reads, consumers atomically write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
