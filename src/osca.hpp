@@ -120,7 +120,8 @@ template <u32 QueueSize = 256> class Spmc final {
     //   false if no job was run
     auto run_next() -> bool {
         // optimistic read; job data visible at (4), claimed at (7)
-        // note: if `t` is stale, either sequence check or CAS will safely fail
+        // note: if `t` is stale, sequence check refreshes it; if job not ready,
+        //       returns false
         auto t = atomic::load(&tail_, atomic::RELAXED);
         while (true) {
             auto& entry = queue_[t % QueueSize];
@@ -235,7 +236,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     // consumers atomically read and write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 tail_;
 
-    // single producer atomically reads, consumers atomically write
+    // callers atomically read, consumers atomically write
     alignas(kernel::core::CACHE_LINE_SIZE) u32 completed_;
 
     // make sure `completed_` is alone on cache line
@@ -261,7 +262,7 @@ template <u32 QueueSize = 256> class Mpmc final {
     template <is_job T, typename... Args> auto try_add(Args&&... args) -> bool {
         static_assert(sizeof(T) <= JOB_SIZE, "job too large for queue slot");
 
-        // optimistic read; job data visible at (1) and claimed at (8)
+        // optimistic read; slot availability visible at (1) and claimed at (8)
         // note: if `h` is stale either sequence check or CAS fails safely
         auto h = atomic::load(&head_, atomic::RELAXED);
 
