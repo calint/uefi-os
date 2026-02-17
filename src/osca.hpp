@@ -352,7 +352,7 @@ template <u32 QueueSize = 256> class Mpmc final {
                 continue;
             }
 
-            // job is ready to run, try to claim it
+            // `seq` is `t + 1` -> slot is ready to run, try to claim it
 
             // (7) atomically claims this job from competing consumers
             // note: `weak` (true) because failure is retried in this loop
