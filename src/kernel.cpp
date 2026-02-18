@@ -9,10 +9,6 @@
 // - no recovery paths implemented
 // - correctness assumed
 
-// critical addresses:
-// 0x0'8000 - ?       : start core trampoline code
-// 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
-
 using namespace kernel;
 
 namespace {
@@ -752,6 +748,15 @@ extern "C" u8 kernel_asm_run_core_config[];
 auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
+
+    // critical addresses:
+    // 0x0'8000 - ?       : start core trampoline code
+    // 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
+    //
+    // note: address range is checked to be available as conventional memory in
+    //       `init_paging` and after cores have launched the memory can be
+    //       reclaimed
+
     // the pages used in trampoline to transition from real -> protected -> long
     auto* const protected_mode_pml4 = ptr<u64>(0x1'0000);
     auto* const protected_mode_pdpt = ptr<u64>(0x1'1000);
