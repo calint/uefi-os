@@ -145,7 +145,7 @@ template <u32 QueueSize = 256> class Spmc final {
                 continue;
             }
 
-            // job is ready to be run, try to claim it
+            // `seq` is `t + 1` -> slot is ready to run, try to claim it
 
             // (7) atomically claims this job from competing consumers
             // note: `weak` (true) because failure is retried in this loop
@@ -158,6 +158,8 @@ template <u32 QueueSize = 256> class Spmc final {
                 // hand the slot back to the producer for the next lap
                 // (2) paired with acquire (1)
                 atomic::store(&entry.sequence, t + QueueSize, atomic::RELEASE);
+                // note: release makes the slot available for producer's next
+                //       lap
 
                 // increment completed and release job side-effects for
                 // `wait_idle`
