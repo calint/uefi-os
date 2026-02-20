@@ -173,23 +173,6 @@ auto make_heap() -> Heap {
     return {ptr<void>(aligned_start), aligned_size};
 }
 
-// pops zeroed pages
-auto allocate_pages(u64 const num_pages) -> void* {
-    auto const bytes = num_pages * 4096;
-
-    // ensure heap has at least one 4k page remaining
-    if (heap.size < bytes) {
-        serial::print("error: out of memory when allocating pages\n");
-        panic(0xff'ff'00'00); // red screen: fatal
-    }
-
-    auto* const p = heap.start;
-    heap.start = ptr_offset<void>(heap.start, bytes);
-    heap.size -= bytes;
-    memset(p, 0, bytes);
-    return p;
-}
-
 // page table traversal
 // returns pointer to the next level in paging hierarchy
 // allocates a new zeroed page if the entry is not present
@@ -383,10 +366,10 @@ auto init_paging() -> void {
     u32 low, high;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
-    // pat index 4 (pa4): bits 32-34 of the 64-bit msr
+    // pat index 4 (pa4): bits 32-39 of the 64-bit msr
     // 0x01: write-combining (wc) mode
     // wc is essential for framebuffers; it buffers writes to the gpu
-    high = (high & ~7u) | 1;
+    high = (high & ~0xffu) | 1;
 
     // wrmsr: write edx:eax back to ia32_pat
     asm volatile("wrmsr" : : "a"(low), "d"(high), "c"(0x277));
@@ -634,7 +617,7 @@ u8 static run_core_started_flag;
     init_idt_ap();
 
     // find this core index
-    auto const apic_id = (apic.local[0x20 / 4] >> 24) & 0xff;
+    auto const apic_id = (apic.local[0x020 / 4] >> 24) & 0xff;
     for (auto i = 0u; i < core_count; ++i) {
         if (cores[i].apic_id == apic_id) {
             osca::run_core(i);
@@ -779,6 +762,17 @@ auto inline init_cores() {
     serial::print_dec(core_count);
     serial::print("\n");
 
+    // prepare the trampoline with the target function
+    // calculate size using the addresses of the labels
+    auto const start_addr = uptr(kernel_asm_run_core_start);
+    auto const code_size = uptr(kernel_asm_run_core_end) - start_addr;
+
+    // copy the trampoline code to lower 1MB so real mode can run it
+    memcpy(ptr<void>(TRAMPOLINE_DEST), kernel_asm_run_core_start, code_size);
+
+    // calculate the offset of the config data relative to the start
+    auto const config_offset = uptr(kernel_asm_run_core_config) - start_addr;
+
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
         // usually the bsp has apic id 0, but check specifically
@@ -791,19 +785,6 @@ auto inline init_cores() {
         auto const stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
         auto const stack_top =
             uptr(stack) + config::CORE_STACK_SIZE_PAGES * 4096;
-
-        // prepare the trampoline with the target function
-        // calculate size using the addresses of the labels
-        auto const start_addr = uptr(kernel_asm_run_core_start);
-        auto const code_size = uptr(kernel_asm_run_core_end) - start_addr;
-
-        // copy the trampoline code to lower 1MB so real mode can run it
-        memcpy(ptr<void>(TRAMPOLINE_DEST), kernel_asm_run_core_start,
-               code_size);
-
-        // calculate the offset of the config data relative to the start
-        auto const config_offset =
-            uptr(kernel_asm_run_core_config) - start_addr;
 
         // define struct
         struct [[gnu::packed]] TrampolineConfig {
