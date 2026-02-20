@@ -230,22 +230,22 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
 
     // page alignment: floor start and ceil end to 4KB boundaries
     auto addr = phys & ~0xfffull;
-    auto end = (phys + size + 4095) & ~0xfffull;
+    auto const end = (phys + size + 4095) & ~0xfffull;
 
     while (addr < end) {
         // x64 virtual address bit-fields for table indexing
         // page map level 4
-        auto pml4_idx = (addr >> 39) & 0x1ff;
+        auto const pml4_idx = (addr >> 39) & 0x1ff;
         // page directory pointer
-        auto pdp_idx = (addr >> 30) & 0x1ff;
+        auto const pdp_idx = (addr >> 30) & 0x1ff;
         // page directory
-        auto pd_idx = (addr >> 21) & 0x1ff;
+        auto const pd_idx = (addr >> 21) & 0x1ff;
         // page table
-        auto pt_idx = (addr >> 12) & 0x1ff;
+        auto const pt_idx = (addr >> 12) & 0x1ff;
 
         // traverse hierarchy: allocate lower tables as needed
-        auto* pdp = get_next_table(long_mode_pml4, pml4_idx);
-        auto* pd = get_next_table(pdp, pdp_idx);
+        auto* const pdp = get_next_table(long_mode_pml4, pml4_idx);
+        auto* const pd = get_next_table(pdp, pdp_idx);
 
         // use 2MB page only if:
         // * address is 2MB aligned
