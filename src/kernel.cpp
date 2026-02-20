@@ -268,7 +268,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         auto const is_huge = (entry & PAGE_P) && (entry & PAGE_PS);
         auto const is_free = !(entry & PAGE_P);
 
-        auto const can_use_2mb = (addr % PAGE_2M == 0) &&
+        auto const can_use_2mb = (addr & (PAGE_2M - 1)) == 0 &&
                                  (addr + PAGE_2M <= end) &&
                                  (is_free || is_huge);
 
