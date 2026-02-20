@@ -826,7 +826,7 @@ namespace kernel {
 auto allocate_pages(u64 const num_pages) -> void* {
     auto const bytes = num_pages * 4096;
 
-    // ensure heap has at least one 4k page remaining
+    // ensure heap has enough space for the requested allocation
     if (heap.size < bytes) {
         serial::print("error: out of memory when allocating pages\n");
         panic(0xff'ff'00'00); // red screen: fatal
