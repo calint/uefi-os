@@ -434,7 +434,7 @@ auto inline init_timer() -> void {
     apic.local[0x0f0 / 4] = 0x1ff;
 
     // dcr (divide configuration register): set timer divisor
-    // 0x03: divide by 16 (timer increments every 16 bus cycles)
+    // 0x03: divide by 16 (timer decrements every 16 bus cycles)
     apic.local[0x3e0 / 4] = 3;
 
     // lvt timer register: configure mode and vector
@@ -752,18 +752,18 @@ auto inline init_cores() {
     //       reclaimed
 
     // the pages used in trampoline to transition from real -> protected -> long
-    auto* const protected_mode_pml4 = ptr<u64>(0x1'0000);
-    auto* const protected_mode_pdpt = ptr<u64>(0x1'1000);
-    auto* const protected_mode_pd = ptr<u64>(0x1'2000);
+    auto* const protected_mode_pdpt = ptr<u64>(0x1'0000);
+    auto* const protected_mode_pd = ptr<u64>(0x1'1000);
+    auto* const protected_mode_pt = ptr<u64>(0x1'2000);
 
-    memset(protected_mode_pml4, 0, 4096);
     memset(protected_mode_pdpt, 0, 4096);
     memset(protected_mode_pd, 0, 4096);
+    memset(protected_mode_pt, 0, 4096);
 
     // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'3000
-    protected_mode_pml4[0] = 0x1'1000 | PAGE_P | PAGE_RW;
-    protected_mode_pdpt[0] = 0x1'2000 | PAGE_P | PAGE_RW;
-    protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
+    protected_mode_pdpt[0] = 0x1'1000 | PAGE_P | PAGE_RW;
+    protected_mode_pd[0] = 0x1'2000 | PAGE_P | PAGE_RW;
+    protected_mode_pt[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
     // note: page tables are in wb cacheable ram
     //       x86 cache coherence guarantees visibility to ap
@@ -799,7 +799,7 @@ auto inline init_cores() {
 
         // define struct
         struct [[gnu::packed]] TrampolineConfig {
-            uptr protected_mode_pml4;
+            uptr protected_mode_pdpt;
             uptr stack;
             uptr task;
             uptr long_mode_pml4;
@@ -808,7 +808,7 @@ auto inline init_cores() {
             ptr_offset<TrampolineConfig>(TRAMPOLINE_DEST, config_offset);
 
         // fill the values
-        config->protected_mode_pml4 = uptr(protected_mode_pml4);
+        config->protected_mode_pdpt = uptr(protected_mode_pdpt);
         config->stack = uptr(stack_top);
         config->task = uptr(run_core);
         config->long_mode_pml4 = uptr(long_mode_pml4);

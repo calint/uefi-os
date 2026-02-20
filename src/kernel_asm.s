@@ -123,7 +123,7 @@ kernel_asm_run_core_start:
     movl %eax, %cr4
 
     # load bridge page table
-    movl 0(%esi), %eax     # 0 = offset of protected_mode_pml4
+    movl 0(%esi), %eax     # 0 = offset of protected_mode_pdpt
     movl %eax, %cr3
 
     # enable long mode
