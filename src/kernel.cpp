@@ -195,33 +195,33 @@ alignas(4096) u64 long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
-auto constexpr PAGE_P = (1ull << 0);
+auto constexpr static PAGE_P = (1ull << 0);
 
 // read/write (r/w): 0 = read-only, 1 = read/write
-auto constexpr PAGE_RW = (1ull << 1);
+auto constexpr static PAGE_RW = (1ull << 1);
 
 // page-level write-through (pwt): bit 0 of pat index
-auto constexpr PAGE_PWT = (1ull << 3);
+auto constexpr static PAGE_PWT = (1ull << 3);
 
 // page-level cache disable (pcd): bit 1 of pat index
-auto constexpr PAGE_PCD = (1ull << 4);
+auto constexpr static PAGE_PCD = (1ull << 4);
 
 // page size (ps): 1 in pde (level 2) indicates 2mb huge page
-auto constexpr PAGE_PS = (1ull << 7);
+auto constexpr static PAGE_PS = (1ull << 7);
 
 // pat (page attribute table) bit locations
 // the pat bit is the "high bit" (bit 2) of the 3-bit pat index
 // its position changes based on the page size!
 
 // pat bit for 4KB ptes
-auto constexpr PAGE_PAT_4KB = (1ull << 7);
+auto constexpr static PAGE_PAT_4KB = (1ull << 7);
 
 // pat bit for 2MB pdes
-auto constexpr PAGE_PAT_2MB = (1ull << 12);
+auto constexpr static PAGE_PAT_2MB = (1ull << 12);
 
 // bit 12 in 'flags' parameter is a software-only signal that the caller wants
 // write-combining (pat index 4)
-auto constexpr USE_PAT_WC = (1ull << 12);
+auto constexpr static USE_PAT_WC = (1ull << 12);
 
 // range mapping with hybrid page sizes
 // creates identity mappings with optimized page sizes
@@ -260,7 +260,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             addr += 0x20'0000; // jump by 2MB
         } else {
             // standard page: leaf exists at level 1 (pt)
-            auto* pt = get_next_table(pd, pd_idx);
+            auto* const pt = get_next_table(pd, pd_idx);
             auto entry_flags = flags;
 
             if (entry_flags & USE_PAT_WC) {
@@ -289,11 +289,11 @@ auto init_paging() -> void {
 
     // page attribute flags
     // p: present; rw: read/write
-    auto constexpr RAM_FLAGS = PAGE_P | PAGE_RW;
+    auto constexpr static RAM_FLAGS = PAGE_P | PAGE_RW;
 
     // pcd: page-level cache disable
     // essential for mmio to avoid reading stale hardware register values
-    auto constexpr MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
+    auto constexpr static MMIO_FLAGS = PAGE_P | PAGE_RW | PAGE_PCD;
 
     // parse uefi memory map to identity-map system ram and firmware regions
     auto total_mem_B = 0ull;
@@ -354,7 +354,7 @@ auto init_paging() -> void {
     map_range(uptr(apic.local), 0x1000, MMIO_FLAGS);
 
     // map frame buffer with write-combining (pat index 4)
-    auto constexpr FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
+    auto constexpr static FB_FLAGS = PAGE_P | PAGE_RW | USE_PAT_WC;
     map_range(uptr(frame_buffer.pixels),
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
@@ -412,7 +412,7 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
     return ticks_per_10ms * 100 / hz;
 }
 
-auto constexpr TIMER_VECTOR = 32u;
+auto constexpr static TIMER_VECTOR = 32u;
 
 // disables legacy pic and starts lapic timer in periodic mode
 auto inline init_timer() -> void {
@@ -449,7 +449,7 @@ auto io_apic_write(u32 const reg, u32 const val) -> void {
     apic.io[0x010 / 4] = val; // write value
 }
 
-auto constexpr KEYBOARD_VECTOR = 33u;
+auto constexpr static KEYBOARD_VECTOR = 33u;
 
 // keyboard and io-apic routing
 // routes keyboard irq through io-apic and enables scanning
@@ -639,7 +639,7 @@ auto inline delay_cycles(u64 const cycles) -> void {
 // assumes legacy pit present and enabled
 auto delay_us(u64 const us) -> void {
     // the pit frequency is a fixed hardware constant: 1.193182 mhz.
-    auto constexpr pit_base_freq = 1'193'182u;
+    auto constexpr static pit_base_freq = 1'193'182u;
 
     // calculate how many pit ticks are required for the requested microseconds.
     auto ticks = (us * pit_base_freq) / 1'000'000;
@@ -731,7 +731,7 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
+auto constexpr static TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
 
