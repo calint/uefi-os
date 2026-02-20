@@ -222,10 +222,10 @@ auto constexpr static USE_PAT_WC = (1ull << 12);
 auto get_next_table(u64* const table, u64 const index) -> u64* {
     auto const entry = table[index];
 
-    if (entry & PAGE_PS) {
-        serial::print("error: attempted to split 2MB page\n");
-        panic(0x00'ff'ff'00);
-    }
+    // if (entry & PAGE_PS) {
+    //     serial::print("error: attempted to split 2MB page\n");
+    //     panic(0x00'ff'ff'00); // yellow
+    // }
 
     // check bit 0 (p): present
     if (!(entry & PAGE_P)) {
@@ -355,7 +355,7 @@ auto init_paging() -> void {
 
     if (!trampoline_memory_is_free) {
         serial::print("abort: memory used by trampoline not free\n");
-        panic(0x00'00'ff'ff);
+        panic(0x00'00'ff'ff); // blue
     }
 
     // map apic registers for interrupt handling
@@ -635,7 +635,7 @@ u8 static run_core_started_flag;
     }
 
     // core not found
-    panic(0xff'ff'ff'ff);
+    panic(0xff'ff'ff'ff); // white
 }
 
 auto inline delay_cycles(u64 const cycles) -> void {
