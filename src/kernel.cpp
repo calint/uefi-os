@@ -283,9 +283,10 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
                     serial::print("error: 2MB page flag mismatch\n");
                     panic(0x00'ff'ff'00);
                 }
-                addr += PAGE_2M;
+                addr = (addr + PAGE_2M) & ~(PAGE_2M - 1);
                 continue;
             }
+            // current entry not a huge page
             auto* const pt = get_next_table(pd, pd_idx);
             auto const entry_flags = (flags & USE_PAT_WC)
                                          ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB
