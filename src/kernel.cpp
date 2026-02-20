@@ -173,13 +173,14 @@ auto make_heap() -> Heap {
         }
     }
 
+    // note: assumes heap was found
     return {ptr<void>(aligned_start), aligned_size};
 }
 
 // page table traversal
 // returns pointer to the next level in paging hierarchy
 // allocates a new zeroed page if the entry is not present
-auto get_next_table(u64* table, u64 const index) -> u64* {
+auto get_next_table(u64* const table, u64 const index) -> u64* {
     // check bit 0 (p): present
     if (!(table[index] & 0x01)) {
         // create next level only when needed
@@ -298,7 +299,7 @@ auto init_paging() -> void {
     auto const* const desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
     for (auto i = 0u; i < num_descriptors; ++i) {
-        auto const* d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
+        auto const* const d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             desc, i * memory_map.descriptor_size);
 
         if (d->Type == EfiACPIReclaimMemory || d->Type == EfiACPIMemoryNVS) {
