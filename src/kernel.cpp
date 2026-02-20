@@ -165,7 +165,7 @@ auto make_heap() -> Heap {
 
                 // 4k alignment: mask lower 12 bits to ensure page boundary
                 aligned_start = (chunk_start + 4095) & ~4095ull;
-                aligned_size = (chunk_size + 4095) & ~4095ull;
+                aligned_size = chunk_size - (aligned_start - chunk_start);
             }
         }
     }
@@ -386,9 +386,9 @@ auto init_paging() -> void {
 // apic timer calibration
 auto inline calibrate_apic(u32 const hz) -> u32 {
     // pit channel 0: set to mode 0 (interrupt on terminal count)
-    // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e2b)
+    // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e9b)
     outb(0x43, 0x30); // control: ch0, lo/hi, mode 0, binary
-    outb(0x40, 0x2b); // divisor low byte
+    outb(0x40, 0x9b); // divisor low byte
     outb(0x40, 0x2e); // divisor high byte
 
     // lapic initial count register (0x380): set to max
@@ -407,8 +407,7 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
     auto const current_count = apic.local[0x390 / 4];
     auto const ticks_per_10ms = 0xffff'ffff - current_count;
 
-    // calculate divisor: (ticks in 10ms * 100) / target_hz
-    // result is the initial count value for periodic interrupts
+    // lapic initial count value for periodic interrupts
     return ticks_per_10ms * 100 / hz;
 }
 
@@ -522,7 +521,7 @@ auto inline init_idt_bsp() -> void {
     // 0x8e: 10001110b -> p=1, dpl=00, type=1110 (64-bit interrupt gate)
     // p : present
     // dpl: ring 0
-    // type: disable nested interrupts
+    // type: 64-bit interrupt gate (clears IF on entry, preventing nesting)
     // 8: second entry in the gdt (code)
     auto const apic_addr = u64(kernel_asm_timer_handler);
     idt[TIMER_VECTOR] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
@@ -568,7 +567,7 @@ extern "C" auto kernel_on_keyboard() -> void {
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
     // notifies the lapic that the handler is finished so it can deliver the
-    // next interrupt of equal or lower priority
+    // next interrupt
     apic.local[0x0b0 / 4] = 0;
 }
 
@@ -580,7 +579,7 @@ extern "C" auto kernel_on_timer() -> void {
 
     // eoi (end of interrupt): writing 0 to offset 0x0b0
     // notifies the lapic that the handler is finished so it can deliver the
-    // next interrupt of equal or lower priority
+    // next interrupt
     apic.local[0x0b0 / 4] = 0;
 }
 
