@@ -745,7 +745,7 @@ auto inline init_cores() {
 
     // critical addresses:
     // 0x0'8000 - ?       : start core trampoline code
-    // 0x1'0000 - 0x1'2fff: start core pml4 for protected mode code
+    // 0x1'0000 - 0x1'1fff: start core pdpt for protected mode code
     //
     // note: address range is checked to be available as conventional memory in
     //       `init_paging` and after cores have launched the memory can be
@@ -754,16 +754,13 @@ auto inline init_cores() {
     // the pages used in trampoline to transition from real -> protected -> long
     auto* const protected_mode_pdpt = ptr<u64>(0x1'0000);
     auto* const protected_mode_pd = ptr<u64>(0x1'1000);
-    auto* const protected_mode_pt = ptr<u64>(0x1'2000);
 
     memset(protected_mode_pdpt, 0, 4096);
     memset(protected_mode_pd, 0, 4096);
-    memset(protected_mode_pt, 0, 4096);
 
-    // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'3000
-    protected_mode_pdpt[0] = 0x1'1000 | PAGE_P | PAGE_RW;
-    protected_mode_pd[0] = 0x1'2000 | PAGE_P | PAGE_RW;
-    protected_mode_pt[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
+    // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'2000
+    protected_mode_pdpt[0] = 0x1'1000 | PAGE_P;
+    protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
     // note: page tables are in wb cacheable ram
     //       x86 cache coherence guarantees visibility to ap
