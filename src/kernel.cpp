@@ -211,25 +211,28 @@ auto constexpr static PAGE_PAT_4KB = (1ull << 7);
 // pat bit for 2MB pdes
 auto constexpr static PAGE_PAT_2MB = (1ull << 12);
 
-// bit 12 is a signal and bit for huge pages that the caller wants
-// write-combining (pat index 4)
+// bit 12:
+// * for 2MB pages: hardware PAT bit
+// * for 4KB pages: software signal translated to PAGE_PAT_4KB
 auto constexpr static USE_PAT_WC = (1ull << 12);
 
 // page table traversal
 // returns pointer to the next level in paging hierarchy
 // allocates a new zeroed page if the entry is not present
 auto get_next_table(u64* const table, u64 const index) -> u64* {
+    auto const entry = table[index];
+
+    if (entry & PAGE_PS) {
+        serial::print("error: attempted to split 2MB page\n");
+        panic(0x00'ff'ff'00);
+    }
+
     // check bit 0 (p): present
-    if (!(table[index] & PAGE_P)) {
+    if (!(entry & PAGE_P)) {
         // create next level only when needed
         auto const* const next = allocate_pages(1); // zeroed 4KB chunk
         // link new table: set physical address and flags
-        // 0x03: present | writable
         table[index] = uptr(next) | PAGE_P | PAGE_RW;
-    }
-    if (table[index] & PAGE_PS) {
-        serial::print("error: attempted to split 2MB page\n");
-        panic(0x00'ff'ff'00);
     }
     // mask out lower 12 flag bits to obtain physical address
     return ptr<u64>(table[index] & ~(PAGE_4K - 1));
