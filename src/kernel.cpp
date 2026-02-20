@@ -139,33 +139,36 @@ auto inline init_gdt() -> void {
 }
 
 // heap (bump allocator) init
-// find biggest chunk of free memory and use it as heap
+// finds the largest contiguous usable memory chunk and aligns to page
+// boundaries
 auto make_heap() -> Heap {
-    // find largest contiguous chunk of memory
-    auto largest_chunk_size = 0ull;
     auto aligned_start = 0ull;
     auto aligned_size = 0ull;
+    auto max_size = 0ull;
 
-    // parse uefi memory descriptors
     auto const* const desc = ptr<EFI_MEMORY_DESCRIPTOR>(memory_map.buffer);
     auto const num_descriptors = memory_map.size / memory_map.descriptor_size;
+
     for (auto i = 0u; i < num_descriptors; ++i) {
-        // step by uefi-defined descriptor size
         auto const* const d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             uptr(desc), i * memory_map.descriptor_size);
 
-        // usable ram not reserved by firmware/acpi
         if (d->Type == EfiConventionalMemory) {
             auto const chunk_start = d->PhysicalStart;
-            auto const chunk_size = d->NumberOfPages * 4096;
+            auto const chunk_end = chunk_start + (d->NumberOfPages * 4096);
 
-            // find contiguous maximum for the heap
-            if (chunk_size > largest_chunk_size) {
-                largest_chunk_size = chunk_size;
+            // align start up; align end down; ensures heap is within physical
+            // bounds
+            auto const current_start = (chunk_start + 4095) & ~4095ull;
+            auto const current_end = chunk_end & ~4095ull;
 
-                // 4k alignment: mask lower 12 bits to ensure page boundary
-                aligned_start = (chunk_start + 4095) & ~4095ull;
-                aligned_size = chunk_size - (aligned_start - chunk_start);
+            if (current_end > current_start) {
+                auto const current_size = current_end - current_start;
+                if (current_size > max_size) {
+                    max_size = current_size;
+                    aligned_start = current_start;
+                    aligned_size = current_size;
+                }
             }
         }
     }
