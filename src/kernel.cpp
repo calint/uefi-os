@@ -250,32 +250,26 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         auto* const pdp = get_next_table(long_mode_pml4, pml4_idx);
         auto* const pd = get_next_table(pdp, pdp_idx);
 
-        // use 2MB page only if:
-        // * address is 2MB aligned
-        // * at least 2MB remains
-        if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
-            // huge page: ps (page size) bit = 1 in page directory entry
-            auto entry_flags = flags | PAGE_PS;
+        // check if 2MB page is possible
+        // safe to overwrite if entry is not present or is already a huge page
+        auto const entry = pd[pd_idx];
+        auto const is_huge = (entry & PAGE_P) && (entry & PAGE_PS);
+        auto const is_free = !(entry & PAGE_P);
 
-            // note: write-combining bit USE_PAT_WC is same bit as PAGE_PAT_2MB
+        auto const can_use_2mb = (addr % 0x20'0000 == 0) &&
+                                 (addr + 0x20'0000 <= end) &&
+                                 (is_free || is_huge);
 
-            pd[pd_idx] = addr | entry_flags;
-            addr += 0x20'0000; // jump by 2MB
+        if (can_use_2mb) {
+            pd[pd_idx] = addr | flags | PAGE_PS;
+            addr += 0x20'0000;
         } else {
-            // standard page: leaf exists at level 1 (pt)
             auto* const pt = get_next_table(pd, pd_idx);
-            auto entry_flags = flags;
-
-            if (entry_flags & USE_PAT_WC) {
-                // write-combining (index 4): binary 100
-
-                // remove bit valid for 2MB pages and enable bit for 4KB page
-                entry_flags &= ~USE_PAT_WC;
-                entry_flags |= PAGE_PAT_4KB;
-            }
-
+            auto const entry_flags = (flags & USE_PAT_WC)
+                                         ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB
+                                         : flags;
             pt[pt_idx] = addr | entry_flags;
-            addr += 0x1000; // jump by 4KB
+            addr += 0x1000;
         }
     }
 }
