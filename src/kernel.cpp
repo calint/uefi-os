@@ -138,6 +138,9 @@ auto inline init_gdt() -> void {
                  : "rax", "memory");
 }
 
+auto constexpr PAGE_4K = 0x1000ull;
+auto constexpr PAGE_2M = 0x20'0000ull;
+
 // heap (bump allocator) init
 // finds the largest contiguous usable memory chunk and aligns to page
 // boundaries
@@ -159,8 +162,9 @@ auto make_heap() -> Heap {
 
             // align start up; align end down; ensures heap is within physical
             // bounds
-            auto const current_start = (chunk_start + 4095) & ~4095ull;
-            auto const current_end = chunk_end & ~4095ull;
+            auto const current_start =
+                (chunk_start + PAGE_4K - 1) & ~(PAGE_4K - 1);
+            auto const current_end = chunk_end & ~(PAGE_4K - 1);
 
             if (current_end > current_start) {
                 auto const current_size = current_end - current_start;
@@ -189,9 +193,8 @@ auto get_next_table(u64* const table, u64 const index) -> u64* {
         // 0x03: present | writable
         table[index] = uptr(next) | 3;
     }
-    // mask lower 12 bits: remove flags to get pure physical address
-    // x64 paging structures are always 4k aligned
-    return ptr<u64>(table[index] & ~0xfffull);
+    // mask out lower 12 flag bits to obtain physical address
+    return ptr<u64>(table[index] & ~(PAGE_4K - 1));
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
@@ -233,8 +236,8 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
     -> void {
 
     // page alignment: floor start and ceil end to 4KB boundaries
-    auto addr = phys & ~0xfffull;
-    auto const end = (phys + size + 4095) & ~0xfffull;
+    auto addr = phys & ~(PAGE_4K - 1);
+    auto const end = (phys + size + PAGE_4K - 1) & ~(PAGE_4K - 1);
 
     while (addr < end) {
         // x64 virtual address bit-fields for table indexing
@@ -257,20 +260,20 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         auto const is_huge = (entry & PAGE_P) && (entry & PAGE_PS);
         auto const is_free = !(entry & PAGE_P);
 
-        auto const can_use_2mb = (addr % 0x20'0000 == 0) &&
-                                 (addr + 0x20'0000 <= end) &&
+        auto const can_use_2mb = (addr % PAGE_2M == 0) &&
+                                 (addr + PAGE_2M <= end) &&
                                  (is_free || is_huge);
 
         if (can_use_2mb) {
             pd[pd_idx] = addr | flags | PAGE_PS;
-            addr += 0x20'0000;
+            addr += PAGE_2M;
         } else {
             auto* const pt = get_next_table(pd, pd_idx);
             auto const entry_flags = (flags & USE_PAT_WC)
                                          ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB
                                          : flags;
             pt[pt_idx] = addr | entry_flags;
-            addr += 0x1000;
+            addr += PAGE_4K;
         }
     }
 }
