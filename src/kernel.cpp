@@ -19,8 +19,8 @@ alignas(16) static u8 kernel_stack[4096];
 
 // serial (uart) init
 auto inline init_serial() -> void {
-    // ier (interrupt enable register): disable all hardware interrupts
-    // avoids triple fault before idt is ready
+    // ier (interrupt enable register): disable uart interrupts; idt not yet
+    // installed
     outb(0x3f8 + 1, 0x00);
 
     // lcr (line control register): set bit 7 (dlab) to 1
@@ -46,6 +46,7 @@ auto inline init_serial() -> void {
 }
 
 // fpu/simd (sse & avx) init
+// assumes cpu supports sse + avx + xsave
 auto inline init_fpu() -> void {
     // cr0: control register 0
     u64 cr0;
@@ -181,22 +182,6 @@ auto make_heap() -> Heap {
     return {ptr<void>(aligned_start), aligned_size};
 }
 
-// page table traversal
-// returns pointer to the next level in paging hierarchy
-// allocates a new zeroed page if the entry is not present
-auto get_next_table(u64* const table, u64 const index) -> u64* {
-    // check bit 0 (p): present
-    if (!(table[index] & 0x01)) {
-        // create next level only when needed
-        auto const* const next = allocate_pages(1); // zeroed 4KB chunk
-        // link new table: set physical address and flags
-        // 0x03: present | writable
-        table[index] = uptr(next) | 3;
-    }
-    // mask out lower 12 flag bits to obtain physical address
-    return ptr<u64>(table[index] & ~(PAGE_4K - 1));
-}
-
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
 alignas(4096) u64 long_mode_pml4[512];
 
@@ -226,9 +211,29 @@ auto constexpr static PAGE_PAT_4KB = (1ull << 7);
 // pat bit for 2MB pdes
 auto constexpr static PAGE_PAT_2MB = (1ull << 12);
 
-// bit 12 in 'flags' parameter is a software-only signal that the caller wants
+// bit 12 is a signal and bit for huge pages that the caller wants
 // write-combining (pat index 4)
 auto constexpr static USE_PAT_WC = (1ull << 12);
+
+// page table traversal
+// returns pointer to the next level in paging hierarchy
+// allocates a new zeroed page if the entry is not present
+auto get_next_table(u64* const table, u64 const index) -> u64* {
+    // check bit 0 (p): present
+    if (!(table[index] & PAGE_P)) {
+        // create next level only when needed
+        auto const* const next = allocate_pages(1); // zeroed 4KB chunk
+        // link new table: set physical address and flags
+        // 0x03: present | writable
+        table[index] = uptr(next) | PAGE_P | PAGE_RW;
+    }
+    if (table[index] & PAGE_PS) {
+        serial::print("error: attempted to split 2MB page\n");
+        panic(0x00'ff'ff'00);
+    }
+    // mask out lower 12 flag bits to obtain physical address
+    return ptr<u64>(table[index] & ~(PAGE_4K - 1));
+}
 
 // range mapping with hybrid page sizes
 // creates identity mappings with optimized page sizes
@@ -542,7 +547,7 @@ auto inline init_idt_bsp() -> void {
 // idt (interrupt descriptor table) init for application processor
 auto inline init_idt_ap() -> void {
     alignas(16) static IDTEntry idt[256];
-    // note: no interrupt enabled, leads to triple fault as intended
+    // empty idt: any interrupt will cause triple fault and reset
 
     auto const idtr = IDTR{sizeof(idt) - 1, u64(idt)};
     asm volatile("lidt %0" : : "m"(idtr));
@@ -566,7 +571,7 @@ extern "C" auto kernel_on_keyboard() -> void {
         osca::on_keyboard(scancode);
     }
 
-    // eoi (end of interrupt): writing 0 to offset 0x0b0
+    // write any value (conventionally 0) to EOI register
     // notifies the lapic that the handler is finished so it can deliver the
     // next interrupt
     apic.local[0x0b0 / 4] = 0;
@@ -578,7 +583,7 @@ extern "C" auto kernel_on_timer() -> void {
     // notify the os layer that a tick has occurred
     osca::on_timer();
 
-    // eoi (end of interrupt): writing 0 to offset 0x0b0
+    // write any value (conventionally 0) to EOI register
     // notifies the lapic that the handler is finished so it can deliver the
     // next interrupt
     apic.local[0x0b0 / 4] = 0;
