@@ -222,11 +222,6 @@ auto constexpr static USE_PAT_WC = (1ull << 12);
 auto get_next_table(u64* const table, u64 const index) -> u64* {
     auto const entry = table[index];
 
-    // if (entry & PAGE_PS) {
-    //     serial::print("error: attempted to split 2MB page\n");
-    //     panic(0x00'ff'ff'00); // yellow
-    // }
-
     // check bit 0 (p): present
     if (!(entry & PAGE_P)) {
         // create next level only when needed
@@ -276,6 +271,21 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             pd[pd_idx] = addr | flags | PAGE_PS;
             addr += PAGE_2M;
         } else {
+            if (entry & PAGE_PS) {
+                // current entry is marked as huge page
+                // if flags are same as entry continue because this memory has
+                // been mapped
+                auto constexpr FLAG_MASK = PAGE_P | PAGE_RW | PAGE_PS |
+                                           PAGE_PWT | PAGE_PCD | USE_PAT_WC;
+                auto const existing_flags = entry & FLAG_MASK;
+                auto const expected_flags = (flags | PAGE_PS) & FLAG_MASK;
+                if (existing_flags != expected_flags) {
+                    serial::print("error: 2MB page flag mismatch\n");
+                    panic(0x00'ff'ff'00);
+                }
+                addr += PAGE_4K;
+                continue;
+            }
             auto* const pt = get_next_table(pd, pd_idx);
             auto const entry_flags = (flags & USE_PAT_WC)
                                          ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB
@@ -355,7 +365,7 @@ auto init_paging() -> void {
 
     if (!trampoline_memory_is_free) {
         serial::print("abort: memory used by trampoline not free\n");
-        panic(0x00'00'ff'ff); // blue
+        panic(0x00'00'00'ff); // blue
     }
 
     // map apic registers for interrupt handling
@@ -635,7 +645,7 @@ u8 static run_core_started_flag;
     }
 
     // core not found
-    panic(0xff'ff'ff'ff); // white
+    panic(0x00'ff'ff'ff); // white
 }
 
 auto inline delay_cycles(u64 const cycles) -> void {
@@ -835,7 +845,7 @@ auto allocate_pages(u64 const num_pages) -> void* {
     // ensure heap has enough space for the requested allocation
     if (heap.size < bytes) {
         serial::print("error: out of memory when allocating pages\n");
-        panic(0xff'ff'00'00); // red screen: fatal
+        panic(0x00'ff'00'00); // red
     }
 
     auto* const p = heap.start;
