@@ -283,7 +283,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
                     serial::print("error: 2MB page flag mismatch\n");
                     panic(0x00'ff'ff'00);
                 }
-                addr += PAGE_4K;
+                addr += PAGE_2M;
                 continue;
             }
             auto* const pt = get_next_table(pd, pd_idx);
@@ -342,7 +342,7 @@ auto init_paging() -> void {
             free_mem_B += d->NumberOfPages * 4096;
             // check if range covers the trampoline and page table ram
             if (d->PhysicalStart <= 0x8000 &&
-                d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'3000) {
+                d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'2000) {
                 trampoline_memory_is_free = true;
             }
         } else if (d->Type == EfiMemoryMappedIO) {
@@ -388,7 +388,7 @@ auto init_paging() -> void {
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
     // pat entry 4 occupies bits 32–39 (low byte of high dword)
-    // 0x01: write-combining (wc) mode
+    // clear pat4 then set to 0x01 (wc)
     // note: wc is essential for framebuffers; it buffers writes to the gpu
     high = (high & ~0xffu) | 1;
 
