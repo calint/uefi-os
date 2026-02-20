@@ -247,7 +247,9 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         auto* pdp = get_next_table(long_mode_pml4, pml4_idx);
         auto* pd = get_next_table(pdp, pdp_idx);
 
-        // check if 2MB mapping is possible: aligned start and sufficient size
+        // use 2MB page only if:
+        // * address is 2MB aligned
+        // * at least 2MB remains
         if ((addr % 0x20'0000 == 0) && (end - addr >= 0x20'0000)) {
             // huge page: ps (page size) bit = 1 in page directory entry
             auto entry_flags = flags | PAGE_PS;
@@ -275,7 +277,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
     }
 }
 
-// identity maps uefi memory, sets pat, and activates cr3
+// maps uefi memory, sets pat, and activates cr3
 auto init_paging() -> void {
     // preserve heap metadata before allocating page tables
     auto const heap_start = uptr(heap.start);
@@ -366,9 +368,9 @@ auto init_paging() -> void {
     u32 low, high;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
-    // pat index 4 (pa4): bits 32-39 of the 64-bit msr
+    // pat entry 4 occupies bits 32–39 (low byte of high dword)
     // 0x01: write-combining (wc) mode
-    // wc is essential for framebuffers; it buffers writes to the gpu
+    // note: wc is essential for framebuffers; it buffers writes to the gpu
     high = (high & ~0xffu) | 1;
 
     // wrmsr: write edx:eax back to ia32_pat
@@ -602,7 +604,7 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-// flag used by ap to message bsp that ap has started
+// flag used by ap to message bsp that ap has started when started sequentially
 u8 static run_core_started_flag;
 
 // this is the entry point for application processors
@@ -634,6 +636,7 @@ auto inline delay_cycles(u64 const cycles) -> void {
     }
 }
 
+// assumes legacy pit present and enabled
 auto delay_us(u64 const us) -> void {
     // the pit frequency is a fixed hardware constant: 1.193182 mhz.
     auto constexpr pit_base_freq = 1'193'182u;
@@ -820,7 +823,7 @@ auto inline init_cores() {
 
 namespace kernel {
 
-// pops zeroed pages
+// bump allocator returning zeroed 4KB pages
 auto allocate_pages(u64 const num_pages) -> void* {
     auto const bytes = num_pages * 4096;
 
