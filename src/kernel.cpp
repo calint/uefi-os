@@ -281,7 +281,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
                 auto const expected_flags = (flags | PAGE_PS) & FLAG_MASK;
                 if (existing_flags != expected_flags) {
                     serial::print("error: 2MB page flag mismatch\n");
-                    panic(0x00'ff'ff'00);
+                    panic(0x00'ff'ff'00); // yellow
                 }
                 addr = (addr + PAGE_2M) & ~(PAGE_2M - 1);
                 continue;
