@@ -371,6 +371,17 @@ auto init_paging() -> void {
     asm volatile("mov %0, %%cr3" : : "r"(long_mode_pml4) : "memory");
 }
 
+auto apic_ticks_per_sec = 0ul;
+auto tsc_ticks_per_us = 0ull;
+
+// reads the 64-bit time stamp counter (tsc)
+auto inline read_tsc() -> u64 {
+    u32 low;
+    u32 high;
+    asm volatile("rdtsc" : "=a"(low), "=d"(high));
+    return (u64(high) << 32) | low;
+}
+
 // apic timer calibration
 auto inline calibrate_apic(u32 const hz) -> u32 {
     // program pit channel 0 for mode 0 (interrupt on terminal count)
@@ -385,6 +396,9 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
     // timer begins counting down immediately
     apic.local[0x380 / 4] = 0xffff'ffff; // max count
 
+    // capture tsc before the 10ms polling window
+    auto const tsc_start = read_tsc();
+
     // polling pit status via read-back command (0xe2)
     // bit 7 is set when the pit terminal count is reached (10ms elapsed)
     while (true) {
@@ -394,12 +408,19 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
         }
     }
 
+    // capture tsc after 10ms
+    auto const tsc_end = read_tsc();
+
     // lapic current count register (0x390): read remaining ticks
     auto const current_count = apic.local[0x390 / 4];
     auto const ticks_per_10ms = 0xffff'ffff - current_count;
 
-    // lapic initial count value for periodic interrupts
-    return ticks_per_10ms * 100 / hz;
+    apic_ticks_per_sec = ticks_per_10ms * 100;
+
+    // calculate tsc ticks per microsecond; 10ms is 10,000 microseconds;
+    tsc_ticks_per_us = (tsc_end - tsc_start) / 10'000;
+
+    return apic_ticks_per_sec / hz;
 }
 
 auto constexpr static TIMER_VECTOR = 32u;
@@ -620,53 +641,10 @@ u8 static run_core_started_flag;
     panic(0x00'ff'ff'ff); // white
 }
 
-auto inline delay_cycles(u64 const cycles) -> void {
-    for (auto i = 0u; i < cycles; ++i) {
-        core::pause();
-    }
-}
-
-// assumes legacy pit present and enabled
 auto delay_us(u64 const us) -> void {
-    // the pit frequency is a fixed hardware constant: 1.193182 mhz.
-    auto constexpr static pit_base_freq = 1'193'182u;
-
-    // calculate how many pit ticks are required for the requested microseconds.
-    auto ticks = (us * pit_base_freq) / 1'000'000;
-
-    // the pit counter is only 16-bit (max 65535)
-    // 65535 ticks at 1.19mhz is roughly 55ms.
-    while (ticks > 0) {
-        auto const current_batch = (ticks > 0xffff) ? 0xffffu : u16(ticks);
-
-        // configure pit channel 2:
-        // bits 7-6: 10 (channel 2)
-        // bits 5-4: 11 (access mode: low/high byte)
-        // bits 3-1: 000 (mode 0: interrupt on terminal count)
-        // bit 0: 0 (binary mode)
-        outb(0x43, 0b10'11'000'0);
-
-        // load the 16-bit divisor
-        outb(0x42, u8(current_batch & 0xff)); // low byte
-        outb(0x42, u8(current_batch >> 8));   // high byte
-
-        // start the timer by gating channel 2
-        // port 0x61, bit 0 controls the gate for channel 2
-        auto const port_61 = inb(0x61);
-
-        // ensure speaker (bit 1) is off, gate (bit 0) is on.
-        outb(0x61, (port_61 & ~2) | 1);
-
-        // poll bit 5 of port 0x61
-        // this bit goes high when the pit counter hits zero
-        while (!(inb(0x61) & 0x20)) {
-            core::pause();
-        }
-
-        // stop the gate and decrement our total tick count.
-        outb(0x61, port_61 & ~1);
-
-        ticks -= current_batch;
+    auto const target = read_tsc() + (tsc_ticks_per_us * us);
+    while (read_tsc() < target) {
+        core::pause();
     }
 }
 
