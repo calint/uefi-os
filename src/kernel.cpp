@@ -153,34 +153,34 @@ alignas(4096) u64 long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
-auto constexpr static PAGE_P = (1ull << 0);
+auto constexpr PAGE_P = (1ull << 0);
 
 // read/write (r/w): 0 = read-only, 1 = read/write
-auto constexpr static PAGE_RW = (1ull << 1);
+auto constexpr PAGE_RW = (1ull << 1);
 
 // page-level write-through (pwt): bit 0 of pat index
-auto constexpr static PAGE_PWT = (1ull << 3);
+auto constexpr PAGE_PWT = (1ull << 3);
 
 // page-level cache disable (pcd): bit 1 of pat index
-auto constexpr static PAGE_PCD = (1ull << 4);
+auto constexpr PAGE_PCD = (1ull << 4);
 
 // page size (ps): 1 in pde (level 2) indicates 2mb huge page
-auto constexpr static PAGE_PS = (1ull << 7);
+auto constexpr PAGE_PS = (1ull << 7);
 
 // pat (page attribute table) bit locations
 // the pat bit is the "high bit" (bit 2) of the 3-bit pat index
 // its position changes based on the page size!
 
 // pat bit for 4KB ptes
-auto constexpr static PAGE_PAT_4KB = (1ull << 7);
+auto constexpr PAGE_PAT_4KB = (1ull << 7);
 
 // pat bit for 2MB pdes
-auto constexpr static PAGE_PAT_2MB = (1ull << 12);
+auto constexpr PAGE_PAT_2MB = (1ull << 12);
 
 // bit 12:
 // * for 2MB pages: hardware PAT bit
 // * for 4KB pages: software signal translated to PAGE_PAT_4KB
-auto constexpr static USE_PAT_WC = (1ull << 12);
+auto constexpr USE_PAT_WC = (1ull << 12);
 
 // page table traversal
 // returns pointer to the next level in paging hierarchy
@@ -241,8 +241,9 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
                 // current entry is marked as huge page
                 // if flags are same as entry continue because this memory has
                 // been mapped
-                auto constexpr FLAG_MASK = PAGE_P | PAGE_RW | PAGE_PS |
-                                           PAGE_PWT | PAGE_PCD | USE_PAT_WC;
+                auto constexpr static FLAG_MASK = PAGE_P | PAGE_RW | PAGE_PS |
+                                                  PAGE_PWT | PAGE_PCD |
+                                                  USE_PAT_WC;
                 auto const existing_flags = entry & FLAG_MASK;
                 auto const expected_flags = (flags | PAGE_PS) & FLAG_MASK;
                 if (existing_flags != expected_flags) {
@@ -424,7 +425,7 @@ auto inline calibrate_apic_and_tsc() -> void {
     tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
 }
 
-auto constexpr static TIMER_VECTOR = 32u;
+auto constexpr TIMER_VECTOR = 32u;
 
 // disables legacy pic and starts lapic timer in periodic mode
 auto inline init_timer() -> void {
@@ -463,7 +464,7 @@ auto io_apic_write(u32 const reg, u32 const val) -> void {
     apic.io[0x010 / 4] = val; // write value
 }
 
-auto constexpr static KEYBOARD_VECTOR = 33u;
+auto constexpr KEYBOARD_VECTOR = 33u;
 
 // keyboard and io-apic routing
 // routes keyboard irq through io-apic and enables scanning
@@ -703,7 +704,7 @@ extern "C" u8 kernel_asm_run_core_start[];
 extern "C" u8 kernel_asm_run_core_end[];
 extern "C" u8 kernel_asm_run_core_config[];
 
-auto constexpr static TRAMPOLINE_DEST = uptr(0x8000);
+auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
 auto inline init_cores() {
 
