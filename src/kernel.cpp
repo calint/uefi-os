@@ -419,7 +419,7 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto const tsc_end = read_tsc();
     auto const lapic_remaining = apic.local[0x390 / 4];
 
-    // calculate frequencies
+    // calculate frequencies using 10ms interval
     apic_ticks_per_sec = (0xffff'ffff - lapic_remaining) * 100;
     tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
 }
