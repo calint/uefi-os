@@ -412,11 +412,9 @@ auto inline calibrate_apic_and_tsc() -> void {
 
     // lapic current count register (0x390): read remaining ticks
     auto const current_count = apic.local[0x390 / 4];
+
     auto const ticks_per_10ms = 0xffff'ffff - current_count;
-
     apic_ticks_per_sec = ticks_per_10ms * 100;
-
-    // calculate tsc ticks per microsecond
     tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
 }
 
