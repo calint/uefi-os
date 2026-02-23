@@ -81,7 +81,7 @@ auto inline init_gdt() -> void {
     // code gran 0x20: 00100000b (l-bit set: marks 64-bit long mode)
     // data access 0x92: 10010010b (present, ring 0, data, read/write)
     alignas(8) u64 const static gdt[] = {
-        0x0000000000000000ull, // null
+        0,                     // null
         0x00209a0000000000ull, // 64-bit code
         0x0000920000000000ull  // data
     };
