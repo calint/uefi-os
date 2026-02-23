@@ -274,13 +274,15 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                 u16 main_counter_minimum_clock_tick_periodic;
                 u8 page_protection_and_oem_attribute;
             };
-
             auto const* const hpet = ptr<HPET_Table const>(header);
 
             // ensure the address is in system memory space
-            if (hpet->base_address.space_id == 0) {
-                kernel::hpet.address = ptr<u64>(hpet->base_address.address);
+            if (hpet->base_address.space_id != 0) {
+                console_print(sys,
+                              u"HPET address not in system memory space\r\n");
+                return EFI_ABORTED;
             }
+            kernel::hpet.address = ptr<u64>(hpet->base_address.address);
         }
     }
 
