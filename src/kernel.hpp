@@ -36,14 +36,18 @@ struct Apic {
 
 Apic inline apic;
 
+struct Hpet {
+    u64 volatile* address;
+};
+
+Hpet inline hpet;
+
 struct Core {
     u8 apic_id;
 };
 
 Core inline cores[256];
 u8 inline core_count;
-
-u64 inline volatile* hpet_address;
 
 struct Heap {
     void* start;

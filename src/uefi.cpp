@@ -279,7 +279,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
 
             // ensure the address is in system memory space
             if (hpet->base_address.space_id == 0) {
-                kernel::hpet_address = ptr<u64>(hpet->base_address.address);
+                kernel::hpet.address = ptr<u64>(hpet->base_address.address);
             }
         }
     }

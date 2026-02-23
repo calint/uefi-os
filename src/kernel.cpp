@@ -347,7 +347,7 @@ auto init_paging() -> void {
               FB_FLAGS);
 
     // map the hpet timer
-    map_range(uptr(hpet_address), 0x1000, MMIO_FLAGS);
+    map_range(uptr(hpet.address), 0x1000, MMIO_FLAGS);
 
     // map the heap
     map_range(heap_start, heap_size, RAM_FLAGS);
@@ -392,18 +392,18 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto constexpr static MAIN_COUNTER = 0xf0u / 8u;
 
     // read period (femtoseconds per tick) from top 32 bits of capabilities
-    auto const caps = hpet_address[GENERAL_CAPS];
+    auto const caps = hpet.address[GENERAL_CAPS];
     auto const period_fs = u32(caps >> 32);
 
     // ensure hpet is enabled by setting bit 0 of general configuration
-    hpet_address[GENERAL_CONFIG] |= 1u;
+    hpet.address[GENERAL_CONFIG] |= 1u;
 
     // lapic initial count register: set to max to begin countdown
     apic.local[0x380 / 4] = 0xffff'ffff;
 
     // capture start values
     auto const tsc_start = read_tsc();
-    auto const hpet_start = hpet_address[MAIN_COUNTER];
+    auto const hpet_start = hpet.address[MAIN_COUNTER];
 
     // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
     // ticks = target_fs / period_fs
@@ -411,7 +411,7 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
 
     // poll hpet counter until 10ms has elapsed
-    while ((hpet_address[MAIN_COUNTER] - hpet_start) < ticks_to_wait) {
+    while ((hpet.address[MAIN_COUNTER] - hpet_start) < ticks_to_wait) {
         kernel::core::pause();
     }
 
