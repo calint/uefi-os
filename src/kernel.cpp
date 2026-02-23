@@ -24,7 +24,7 @@ auto inline init_serial() -> void {
     outb(0x3f8 + 3, 0x80);
 
     // dll/dlm (divisor latch low/high): set baud rate 115200 baud
-    // note: divisor is 115200 / target baud;
+    // note: divisor is 115200 / target baud = 1
     outb(0x3f8 + 0, 1);
     outb(0x3f8 + 1, 0);
 
