@@ -372,7 +372,7 @@ auto init_paging() -> void {
 }
 
 auto apic_ticks_per_sec = 0ul;
-auto tsc_ticks_per_us = 0ull;
+auto tsc_ticks_per_sec = 0ull;
 
 // reads the 64-bit time stamp counter (tsc)
 auto inline read_tsc() -> u64 {
@@ -417,8 +417,8 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
 
     apic_ticks_per_sec = ticks_per_10ms * 100;
 
-    // calculate tsc ticks per microsecond; 10ms is 10,000 microseconds;
-    tsc_ticks_per_us = (tsc_end - tsc_start) / 10'000;
+    // calculate tsc ticks per microsecond
+    tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
 
     return apic_ticks_per_sec / hz;
 }
@@ -642,7 +642,7 @@ u8 static run_core_started_flag;
 }
 
 auto delay_us(u64 const us) -> void {
-    auto const target = read_tsc() + (tsc_ticks_per_us * us);
+    auto const target = read_tsc() + (tsc_ticks_per_sec * us / 1'000'000);
     while (read_tsc() < target) {
         core::pause();
     }
