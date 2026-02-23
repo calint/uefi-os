@@ -478,6 +478,7 @@ auto inline init_keyboard() -> void {
     // low 32 bits: vector | flags (trigger mode, polarity, etc.)
     io_apic_write(0x10 + keyboard_config.gsi * 2,
                   KEYBOARD_VECTOR | keyboard_config.flags);
+
     // high 32 bits: destination field (sets which cpu receives the interrupt)
     io_apic_write(0x10 + keyboard_config.gsi * 2 + 1, cpu_id << 24);
 

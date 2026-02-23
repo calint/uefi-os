@@ -286,8 +286,12 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
         }
     }
 
+    //
+    // find keyboard ioapic
+    //
+
     // select the specific ioapic for the keyboard gsi where:
-    // gsi_base <= gsi < (gsi_base + max_interrupts)
+    //   gsi_base <= gsi < (gsi_base + max_interrupts)
     auto last_best_base = 0u;
     for (auto i = 0u; i < io_apic_count; ++i) {
         auto const base = io_apics[i].gsi_base;
