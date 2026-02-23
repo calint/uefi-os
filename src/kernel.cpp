@@ -383,7 +383,7 @@ auto inline read_tsc() -> u64 {
 }
 
 // apic timer calibration
-auto inline calibrate_apic(u32 const hz) -> u32 {
+auto inline calibrate_apic_and_tsc() -> void {
     // program pit channel 0 for mode 0 (interrupt on terminal count)
     // base freq = 1193182 hz; 10ms ≈ 11931 ticks (0x2e9b)
     outb(0x43, 0x30); // 00(ch0) 11(lo/hi) 000(mode0) 0(binary)
@@ -419,8 +419,6 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
 
     // calculate tsc ticks per microsecond
     tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
-
-    return apic_ticks_per_sec / hz;
 }
 
 auto constexpr static TIMER_VECTOR = 32u;
@@ -445,9 +443,11 @@ auto inline init_timer() -> void {
     // bits 0-7: vector index in idt for timer interrupts
     apic.local[0x320 / 4] = (1 << 17) | TIMER_VECTOR;
 
+    calibrate_apic_and_tsc();
+
     // icr (initial count register): set the countdown start value
     // use calibration to determine value
-    apic.local[0x380 / 4] = calibrate_apic(config::TIMER_FREQUENCY_HZ);
+    apic.local[0x380 / 4] = apic_ticks_per_sec / config::TIMER_FREQUENCY_HZ;
 }
 
 // io-apic register access

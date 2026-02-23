@@ -1,3 +1,4 @@
+[ ] calibrate_apic: fix without timer using cpuid
 [ ] look at umonitor / umwai instead of pause
 [ ] unmap the Null page
 [-] map exceptions interrupts
