@@ -388,16 +388,16 @@ auto inline read_tsc() -> u64 {
 // apic timer calibration
 auto inline calibrate_apic_and_tsc() -> void {
     // hpet register offsets
-    auto constexpr static GENERAL_CAPS = 0x00u / 8u;
-    auto constexpr static GENERAL_CONFIG = 0x10u / 8u;
-    auto constexpr static MAIN_COUNTER = 0xf0u / 8u;
+    auto constexpr static GENERAL_CAPS = 0x00u / 8;
+    auto constexpr static GENERAL_CONFIG = 0x10u / 8;
+    auto constexpr static MAIN_COUNTER = 0xf0u / 8;
 
     // read period (femtoseconds per tick) from top 32 bits of capabilities
     auto const caps = hpet.address[GENERAL_CAPS];
     auto const period_fs = u32(caps >> 32);
 
     // ensure hpet is enabled by setting bit 0 of general configuration
-    hpet.address[GENERAL_CONFIG] |= 1u;
+    hpet.address[GENERAL_CONFIG] |= 1;
 
     // lapic initial count register: set to max to begin countdown
     apic.local[0x380 / 4] = 0xffff'ffff;
