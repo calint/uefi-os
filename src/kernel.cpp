@@ -373,9 +373,11 @@ auto init_paging() -> void {
 
 // apic timer calibration
 auto inline calibrate_apic(u32 const hz) -> u32 {
-    // pit channel 0: set to mode 0 (interrupt on terminal count)
-    // frequency: 1193182 hz; 10ms = ~11931 ticks (0x2e9b)
-    outb(0x43, 0x30); // control: ch0, lo/hi, mode 0, binary
+    // program pit channel 0 for mode 0 (interrupt on terminal count)
+    // base freq = 1193182 hz; 10ms ≈ 11931 ticks (0x2e9b)
+    outb(0x43, 0x30); // 00(ch0) 11(lo/hi) 000(mode0) 0(binary)
+
+    // load initial count (lsb then msb) per 8254 programming sequence
     outb(0x40, 0x9b); // divisor low byte
     outb(0x40, 0x2e); // divisor high byte
 
@@ -385,10 +387,11 @@ auto inline calibrate_apic(u32 const hz) -> u32 {
 
     // polling pit status via read-back command (0xe2)
     // bit 7 is set when the pit terminal count is reached (10ms elapsed)
-    auto status = 0u;
-    while (!(status & 0x80)) {
-        outb(0x43, 0xe2); // read-back status for ch0
-        status = inb(0x40);
+    while (true) {
+        outb(0x43, 0xe2);       // pit read-back: latch status of channel 0
+        if (inb(0x40) & 0x80) { // bit 7 set when terminal count reached
+            break;              // 10ms elapsed
+        }
     }
 
     // lapic current count register (0x390): read remaining ticks
