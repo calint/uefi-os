@@ -286,12 +286,16 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
         }
     }
 
-    // select ioapic with highest gsi_base <= keyboard gsi
+    // select the specific ioapic for the keyboard gsi where:
+    // gsi_base <= gsi < (gsi_base + max_interrupts)
+    auto last_best_base = 0u;
     for (auto i = 0u; i < io_apic_count; ++i) {
-        if (kernel::keyboard_config.gsi >= io_apics[i].gsi_base) {
+        auto const base = io_apics[i].gsi_base;
+
+        // check if this apic is a candidate and better than the previous find
+        if (kernel::keyboard_config.gsi >= base && base >= last_best_base) {
             kernel::apic.io = ptr<u32>(io_apics[i].address);
-            // note: in a true multi-apic system, check (gsi_base +
-            //       max_interrupts)
+            last_best_base = base;
         }
     }
 
