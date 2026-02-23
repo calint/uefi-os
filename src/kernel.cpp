@@ -60,9 +60,6 @@ auto inline init_fpu() -> void {
     u32 const edx = 0;
     asm volatile("xsetbv" : : "a"(eax), "d"(edx), "c"(0));
 
-    // reset fpu state to defaults
-    asm volatile("fninit");
-
     // mxcsr: control/status register for sse
     //  bits name    description
     //   0-5 flags   sticky bits set by hardware when errors occur
