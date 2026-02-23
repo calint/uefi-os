@@ -4,10 +4,9 @@
 #include "config.hpp"
 #include "kernel.hpp"
 
-// failure model:
-// - unexpected conditions reboot the system
-// - no recovery paths implemented
-// - correctness assumed
+// * unexpected conditions reboot the system
+// * no recovery paths implemented
+// * correctness assumed
 
 using namespace kernel;
 
