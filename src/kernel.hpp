@@ -43,6 +43,8 @@ struct Core {
 Core inline cores[256];
 u8 inline core_count;
 
+u64 inline volatile* hpet_address;
+
 struct Heap {
     void* start;
     u64 size;

@@ -1,6 +1,7 @@
-[ ] calibrate_apic: fix without timer using cpuid
 [ ] look at umonitor / umwai instead of pause
 [ ] unmap the Null page
+[x] calibrate_apic: fix without legacy timer PIT
+    => using HPET
 [-] map exceptions interrupts
     => unless spurious crashes from misfiring interrupts: no
 [-] handle spurious interrupts

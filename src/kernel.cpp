@@ -346,6 +346,9 @@ auto init_paging() -> void {
               frame_buffer.stride * frame_buffer.height * sizeof(u32),
               FB_FLAGS);
 
+    // map the hpet timer
+    map_range(uptr(hpet_address), 0x1000, MMIO_FLAGS);
+
     // map the heap
     map_range(heap_start, heap_size, RAM_FLAGS);
 
@@ -383,38 +386,41 @@ auto inline read_tsc() -> u64 {
 
 // apic timer calibration
 auto inline calibrate_apic_and_tsc() -> void {
-    // program pit channel 0 for mode 0 (interrupt on terminal count)
-    // base freq = 1193182 hz; 10ms ≈ 11931 ticks (0x2e9b)
-    outb(0x43, 0x30); // 00(ch0) 11(lo/hi) 000(mode0) 0(binary)
+    // hpet register offsets
+    auto constexpr static GENERAL_CAPS = 0x00u / 8u;
+    auto constexpr static GENERAL_CONFIG = 0x10u / 8u;
+    auto constexpr static MAIN_COUNTER = 0xf0u / 8u;
 
-    // load initial count (lsb then msb) per 8254 programming sequence
-    outb(0x40, 0x9b); // divisor low byte
-    outb(0x40, 0x2e); // divisor high byte
+    // read period (femtoseconds per tick) from top 32 bits of capabilities
+    auto const caps = hpet_address[GENERAL_CAPS];
+    auto const period_fs = u32(caps >> 32);
 
-    // lapic initial count register (0x380): set to max
-    // timer begins counting down immediately
-    apic.local[0x380 / 4] = 0xffff'ffff; // max count
+    // ensure hpet is enabled by setting bit 0 of general configuration
+    hpet_address[GENERAL_CONFIG] |= 1u;
 
-    // capture tsc before the 10ms polling window
+    // lapic initial count register: set to max to begin countdown
+    apic.local[0x380 / 4] = 0xffff'ffff;
+
+    // capture start values
     auto const tsc_start = read_tsc();
+    auto const hpet_start = hpet_address[MAIN_COUNTER];
 
-    // polling pit status via read-back command (0xe2)
-    // bit 7 is set when the pit terminal count is reached (10ms elapsed)
-    while (true) {
-        outb(0x43, 0xe2);       // pit read-back: latch status of channel 0
-        if (inb(0x40) & 0x80) { // bit 7 set when terminal count reached
-            break;              // 10ms elapsed
-        }
+    // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
+    // ticks = target_fs / period_fs
+    auto constexpr static TARGET_10MS_FS = 10'000'000'000'000ull;
+    auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
+
+    // poll hpet counter until 10ms has elapsed
+    while ((hpet_address[MAIN_COUNTER] - hpet_start) < ticks_to_wait) {
+        kernel::core::pause();
     }
 
-    // capture tsc after 10ms
+    // capture end values
     auto const tsc_end = read_tsc();
+    auto const lapic_remaining = apic.local[0x390 / 4];
 
-    // lapic current count register (0x390): read remaining ticks
-    auto const current_count = apic.local[0x390 / 4];
-
-    apic_ticks_per_sec = (0xffff'ffff - current_count) * 100;
-
+    // calculate frequencies
+    apic_ticks_per_sec = (0xffff'ffff - lapic_remaining) * 100;
     tsc_ticks_per_sec = (tsc_end - tsc_start) * 100;
 }
 

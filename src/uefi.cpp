@@ -48,7 +48,7 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
 
     sys->ConOut->ClearScreen(sys->ConOut);
 
-    console_print(sys, u"efi_main\n");
+    console_print(sys, u"efi_main\r\n");
 
     auto const* const bs = sys->BootServices;
 
@@ -144,9 +144,11 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
     // parse the madt (multiple apic description table) to route interrupts
     for (auto i = 0u; i < entries; ++i) {
         auto const* const header = ptr<SDTHeader>(ptrs[i]);
-        auto constexpr APIC_SIGNATURE = u32(0x43495041); // 'APIC' little-endian
+        auto constexpr static APIC_SIGNATURE =
+            u32(0x43495041); // 'APIC' little-endian
         // signature compare (x86 little-endian)
-        if (*ptr<u32>(header->signature) == APIC_SIGNATURE) {
+        if (*ptr<u32 const>(header->signature) == APIC_SIGNATURE) {
+            console_print(sys, u"ACPI found\r\n");
             // get multiple apic description table (madt)
             //  defines how interrupts are routed to CPUs
             struct [[gnu::packed]] MADT {
@@ -249,7 +251,36 @@ extern "C" auto EFIAPI efi_main(EFI_HANDLE const img,
                 curr += entry->length;
             }
             // done with apic configuration
-            break;
+            continue;
+        }
+
+        auto constexpr static HPET_SIGNATURE =
+            u32(0x54455048); // 'HPET' little-endian
+        if (*ptr<u32 const>(header->signature) == HPET_SIGNATURE) {
+            console_print(sys, u"HPET found\r\n");
+            // high precision event timer description table
+            // contains the base address for the hardware timer
+            struct [[gnu::packed]] HPET_Table {
+                SDTHeader header;
+                u32 event_timer_block_id;
+                struct [[gnu::packed]] {
+                    u8 space_id; // 0 = system memory, 1 = i/o
+                    u8 bit_width;
+                    u8 bit_offset;
+                    u8 access_size;
+                    u64 address;
+                } base_address;
+                u8 hpet_number;
+                u16 main_counter_minimum_clock_tick_periodic;
+                u8 page_protection_and_oem_attribute;
+            };
+
+            auto const* const hpet = ptr<HPET_Table const>(header);
+
+            // ensure the address is in system memory space
+            if (hpet->base_address.space_id == 0) {
+                kernel::hpet_address = ptr<u64>(hpet->base_address.address);
+            }
         }
     }
 
