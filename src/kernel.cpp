@@ -635,6 +635,7 @@ u8 static run_core_started_flag;
     }
 
     // core not found
+    serial::print("error: core not found\n");
     panic(0x00'ff'ff'ff); // white
 }
 
