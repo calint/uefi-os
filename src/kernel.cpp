@@ -77,37 +77,19 @@ auto inline init_fpu() -> void {
 
 // gdt (global descriptor table) init
 auto inline init_gdt() -> void {
-    // legacy x86 format; mostly ignored in 64-bit but fields must exist
-    struct [[gnu::packed]] GDTEntry {
-        u16 limit_low;
-        u16 base_low;
-        u8 base_middle;
-        u8 access;      // p(1) dpl(2) s(1) type(4)
-        u8 granularity; // g(1) d/b(1) l(1) avl(1) limit_high(4)
-        u8 base_high;
-    };
-
-    struct [[gnu::packed]] GDT {
-        GDTEntry null; // selector 0x00: required null descriptor
-        GDTEntry code; // selector 0x08: kernel code (exec/read)
-        GDTEntry data; // selector 0x10: kernel data (read/write)
-    };
-
     // code access 0x9a: 10011010b (present, ring 0, code, exec/read)
     // code gran 0x20: 00100000b (l-bit set: marks 64-bit long mode)
     // data access 0x92: 10010010b (present, ring 0, data, read/write)
-    alignas(8) auto const static gdt = GDT{.null = {0, 0, 0, 0, 0, 0},
-                                           .code = {0, 0, 0, 0x9a, 0x20, 0},
-                                           .data = {0, 0, 0, 0x92, 0x00, 0}};
-
-    // the 10-byte pointer passed to the lgdt instruction
-    struct [[gnu::packed]] GDTDescriptor {
-        u16 size;
-        u64 offset;
+    alignas(8) u64 const static gdt[] = {
+        0x0000000000000000ull, // null
+        0x00209a0000000000ull, // 64-bit code
+        0x0000920000000000ull  // data
     };
 
-    auto const descriptor =
-        GDTDescriptor{.size = sizeof(GDT) - 1, .offset = u64(&gdt)};
+    struct [[gnu::packed]] {
+        u16 size;
+        u64 addr;
+    } const gdtr{sizeof(gdt) - 1, u64(gdt)};
 
     asm volatile("lgdt %0\n"              // load gdt register (gdtr)
                  "mov $0x10, %%ax\n"      // 0x10 points to data descriptor
@@ -120,7 +102,7 @@ auto inline init_gdt() -> void {
                  "lretq\n" // far return: pops rip and cs to flush pipeline
                  "1:\n"    // now running with new cs/ds/ss
                  :
-                 : "m"(descriptor)
+                 : "m"(gdtr)
                  : "rax", "memory");
 }
 
