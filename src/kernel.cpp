@@ -19,30 +19,17 @@ alignas(16) static u8 kernel_stack[4096];
 
 // serial (uart) init
 auto inline init_serial() -> void {
-    // ier (interrupt enable register): disable uart interrupts; idt not yet
-    // installed
-    outb(0x3f8 + 1, 0x00);
-
     // lcr (line control register): set bit 7 (dlab) to 1
     // unlocks divisor registers at 0x3f8 and 0x3f9
     outb(0x3f8 + 3, 0x80);
 
-    // dll/dlm (divisor latch low/high): set baud rate
-    // 115200 / 3 = 38400 baud
-    outb(0x3f8 + 0, 0x03);
-    outb(0x3f8 + 1, 0x00);
+    // dll/dlm (divisor latch low/high): set baud rate 115200 baud
+    outb(0x3f8 + 0, 1);
+    outb(0x3f8 + 1, 0);
 
     // lcr: 8 bits, no parity, 1 stop bit (8n1); dlab to 0
     // locks divisor and enables data transfer
     outb(0x3f8 + 3, 0x03);
-
-    // fcr (fifo control register): enable/clear buffers
-    // 14-byte threshold, clear transmit/receive queues
-    outb(0x3f8 + 2, 0xc7);
-
-    // mcr (modem control register): set rts/dtr
-    // bit 3 enables auxiliary output 2 for irqs
-    outb(0x3f8 + 4, 0x0b);
 }
 
 // fpu/simd (sse & avx) init
