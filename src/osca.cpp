@@ -168,7 +168,7 @@ auto assert_simd(bool const condition, char const* const msg) -> void {
         kernel::serial::print(msg);
         kernel::serial::print("\n");
         // trigger panic with a unique color for simd failure (e.g., magenta)
-        kernel::panic(0x00ff00ff);
+        kernel::panic(0x00ff00ff); // magenta
     }
 }
 
@@ -318,67 +318,70 @@ class Printer {
 };
 
 auto static tick = 0u;
+auto static space_pressed = 0u;
 
 [[noreturn]] auto start() -> void {
     kernel::serial::print("osca x64 kernel is running\n");
 
     jobs.init();
 
-    // auto di = kernel::frame_buffer.pixels;
-    // for (auto i = 0u;
-    //      i < kernel::frame_buffer.stride * kernel::frame_buffer.height; ++i)
-    //      {
-    //     *di = 0x00'00'00'22;
-    //     ++di;
-    // }
-    //
-    // auto main_color = 0xff'ff'ff'ffu;
-    // auto alt_color = 0xc0'c0'c0'c0u;
-    // auto color = main_color;
-    //
-    // Printer pr = {kernel::frame_buffer};
-    //
-    // pr.scale(3).color(0x00'ff'ff'00).position(1u, 2u);
-    // pr.p("osca x64").nl();
-    // pr.color(main_color);
-    //
-    // pr.p("         kernel: ").p_hex(u64(kernel::start)).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("     memory map: ").p_hex(u64(kernel::memory_map.buffer)).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("   frame buffer: ").p_hex(u64(kernel::frame_buffer.pixels)).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("   keyboard gsi: ").p(kernel::keyboard_config.gsi).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p(" keyboard flags: ").p_hex(kernel::keyboard_config.flags).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("        apic io: ").p_hex(u64(kernel::apic.io)).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("     apic local: ").p_hex(u64(kernel::apic.local)).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("         cpu id: ").p(kernel::apic.local[0x020 / 4] >> 24).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("      heap size: ").p_hex(kernel::heap.size).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // pr.p("          cores: ").p(kernel::core_count).nl();
-    // pr.color(pr.color() == main_color ? alt_color : main_color);
-    //
-    // test_simd_support();
-    //
-    // kernel::core::interrupts_enable();
-    //
-    // while (true) {
-    //     kernel::core::pause();
-    // }
+    auto di = kernel::frame_buffer.pixels;
+    for (auto i = 0u;
+         i < kernel::frame_buffer.stride * kernel::frame_buffer.height; ++i) {
+        *di = 0x00'00'00'22;
+        ++di;
+    }
+
+    auto main_color = 0xff'ff'ff'ffu;
+    auto alt_color = 0xc0'c0'c0'c0u;
+    auto color = main_color;
+
+    Printer pr = {kernel::frame_buffer};
+
+    pr.scale(3).color(0x00'ff'ff'00).position(1u, 2u);
+    pr.p("osca x64").nl();
+    pr.color(main_color);
+
+    pr.p("         kernel: ").p_hex(u64(kernel::start)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("     memory map: ").p_hex(u64(kernel::memory_map.buffer)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("   frame buffer: ").p_hex(u64(kernel::frame_buffer.pixels)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("        apic io: ").p_hex(u64(kernel::apic.io)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("     apic local: ").p_hex(u64(kernel::apic.local)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("           hpet: ").p_hex(u64(kernel::hpet.address)).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("      heap size: ").p_hex(kernel::heap.size).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("   keyboard gsi: ").p(kernel::keyboard_config.gsi).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p(" keyboard flags: ").p_hex(kernel::keyboard_config.flags).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("          cores: ").p(kernel::core_count).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    pr.p("         cpu id: ").p(kernel::apic.local[0x020 / 4] >> 24).nl();
+    pr.color(pr.color() == main_color ? alt_color : main_color);
+
+    test_simd_support();
+
+    kernel::core::interrupts_enable();
+
+    while (!space_pressed) {
+        kernel::core::pause();
+    }
 
     auto const frame_buffer_pages_count =
         (kernel::frame_buffer.height * kernel::frame_buffer.stride + 4095) /
@@ -387,9 +390,6 @@ auto static tick = 0u;
 
     kernel::FrameBuffer fb = kernel::frame_buffer;
     fb.pixels = pixels;
-
-    Printer pr = {fb};
-    pr.scale(3);
 
     struct FractalJob {
         kernel::FrameBuffer fb;
@@ -483,8 +483,9 @@ auto static tick = 0u;
 
         jobs.wait_idle();
 
-        pr.position(1, 1);
-        pr.p("cores: ")
+        Printer p{fb};
+        p.position(1, 1).scale(3);
+        p.p("cores: ")
             .p(kernel::core_count)
             .p("   jobs: ")
             .p(job_count)
@@ -538,6 +539,10 @@ auto on_keyboard(u8 const scancode) -> void {
             print_hex(12, 20, 0x0000ff00, total, 3);
             print_string(1, 21, 0x00ffffff, "scancode: ", 3);
             print_hex(12, 21, 0x00ffffff, scancode, 3);
+            if (scancode == 0xb9) {
+                // space released
+                space_pressed = 1u;
+            }
         }
     };
 

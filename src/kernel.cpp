@@ -226,8 +226,8 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
         // check if 2MB page is possible
         // safe to overwrite if entry is not present or is already a huge page
         auto const entry = pd[pd_idx];
-        auto const is_huge = (entry & PAGE_P) && (entry & PAGE_PS);
         auto const is_free = !(entry & PAGE_P);
+        auto const is_huge = !is_free && (entry & PAGE_PS);
 
         auto const can_use_2mb = (addr & (PAGE_2M - 1)) == 0 &&
                                  (addr + PAGE_2M <= end) &&
@@ -254,7 +254,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
                 addr = (addr + PAGE_2M) & ~(PAGE_2M - 1);
                 continue;
             }
-            // current entry not a huge page
+            // current entry is not a huge page
             auto* const pt = get_next_table(pd, pd_idx);
             auto const entry_flags = (flags & USE_PAT_WC)
                                          ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB
