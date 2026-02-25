@@ -338,7 +338,7 @@ auto static space_pressed = 0u;
 
     Printer pr = {kernel::frame_buffer};
 
-    pr.scale(3).color(0x00'ff'ff'00).position(1u, 2u);
+    pr.scale(2).color(0x00'ff'ff'00).position(1u, 2u);
     pr.p("osca x64").nl();
     pr.color(main_color);
 
@@ -484,7 +484,7 @@ auto static space_pressed = 0u;
         jobs.wait_idle();
 
         Printer p{fb};
-        p.position(1, 1).scale(3);
+        p.position(1, 1).scale(2);
         p.p("cores: ")
             .p(kernel::core_count)
             .p("   jobs: ")
