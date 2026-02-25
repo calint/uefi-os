@@ -395,7 +395,7 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto constexpr static TARGET_10MS_FS = 10'000'000'000'000ull;
     auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
 
-    // ensure hpet is enabled by setting bit 0 of general configuration
+    // enable hpet by setting bit 0 of general configuration
     hpet.address[0x10 / 8] |= 1;
 
     // lapic initial count register: set to max to begin countdown
@@ -413,6 +413,9 @@ auto inline calibrate_apic_and_tsc() -> void {
     // capture end values
     auto const tsc_end = read_tsc();
     auto const lapic_remaining = apic.local[0x390 / 4];
+
+    // disable hpet
+    hpet.address[0x10 / 8] &= ~1ull;
 
     // calculate frequencies using 10ms interval
     apic_ticks_per_sec = (0xffff'ffff - lapic_remaining) * 100;
