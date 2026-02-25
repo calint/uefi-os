@@ -388,8 +388,7 @@ auto inline read_tsc() -> u64 {
 // apic timer calibration
 auto inline calibrate_apic_and_tsc() -> void {
     // read period (femtoseconds per tick) from top 32 bits of capabilities
-    auto const caps = hpet.address[0];
-    auto const period_fs = u32(caps >> 32);
+    auto const period_fs = hpet.address[0] >> 32;
 
     // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
     // ticks = target_fs / period_fs
