@@ -387,13 +387,8 @@ auto inline read_tsc() -> u64 {
 
 // apic timer calibration
 auto inline calibrate_apic_and_tsc() -> void {
-    // hpet register offsets
-    auto constexpr static GENERAL_CAPS = 0x00u / 8;
-    auto constexpr static GENERAL_CONFIG = 0x10u / 8;
-    auto constexpr static MAIN_COUNTER = 0xf0u / 8;
-
     // read period (femtoseconds per tick) from top 32 bits of capabilities
-    auto const caps = hpet.address[GENERAL_CAPS];
+    auto const caps = hpet.address[0];
     auto const period_fs = u32(caps >> 32);
 
     // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
@@ -402,17 +397,17 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
 
     // ensure hpet is enabled by setting bit 0 of general configuration
-    hpet.address[GENERAL_CONFIG] |= 1;
+    hpet.address[0x10 / 8] |= 1;
 
     // lapic initial count register: set to max to begin countdown
     apic.local[0x380 / 4] = 0xffff'ffff;
 
     // capture start values
     auto const tsc_start = read_tsc();
-    auto const hpet_start = hpet.address[MAIN_COUNTER];
+    auto const hpet_start = hpet.address[0xf0 / 8];
 
     // poll hpet counter until 10ms has elapsed
-    while ((hpet.address[MAIN_COUNTER] - hpet_start) < ticks_to_wait) {
+    while ((hpet.address[0xf0 / 8] - hpet_start) < ticks_to_wait) {
         kernel::core::pause();
     }
 
