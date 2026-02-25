@@ -396,6 +396,11 @@ auto inline calibrate_apic_and_tsc() -> void {
     auto const caps = hpet.address[GENERAL_CAPS];
     auto const period_fs = u32(caps >> 32);
 
+    // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
+    // ticks = target_fs / period_fs
+    auto constexpr static TARGET_10MS_FS = 10'000'000'000'000ull;
+    auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
+
     // ensure hpet is enabled by setting bit 0 of general configuration
     hpet.address[GENERAL_CONFIG] |= 1;
 
@@ -405,11 +410,6 @@ auto inline calibrate_apic_and_tsc() -> void {
     // capture start values
     auto const tsc_start = read_tsc();
     auto const hpet_start = hpet.address[MAIN_COUNTER];
-
-    // calculate how many hpet ticks constitute 10ms (10^13 femtoseconds)
-    // ticks = target_fs / period_fs
-    auto constexpr static TARGET_10MS_FS = 10'000'000'000'000ull;
-    auto const ticks_to_wait = TARGET_10MS_FS / period_fs;
 
     // poll hpet counter until 10ms has elapsed
     while ((hpet.address[MAIN_COUNTER] - hpet_start) < ticks_to_wait) {
