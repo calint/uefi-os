@@ -199,39 +199,34 @@ auto get_next_table(u64* const table, u64 const index) -> u64* {
     return ptr<u64>(table[index] & ~(PAGE_4K - 1));
 }
 
-// range mapping with hybrid page sizes
-// creates identity mappings with optimized page sizes
+// range mapping with strict collision detection
 auto inline map_range(uptr const phys, u64 const size, u64 const flags)
     -> void {
-
     // page alignment: floor start and ceil end to 4KB boundaries
     auto addr = phys & ~(PAGE_4K - 1);
     auto const end = (phys + size + PAGE_4K - 1) & ~(PAGE_4K - 1);
 
+    // serial::print_hex(phys);
+    // serial::print(" ");
+    // serial::print_hex(size);
+    // serial::print("\n");
+
     while (addr < end) {
-        // x64 virtual address bit-fields for table indexing
-        // page map level 4
         auto const pml4_idx = (addr >> 39) & 0x1ff;
-        // page directory pointer
         auto const pdp_idx = (addr >> 30) & 0x1ff;
-        // page directory
         auto const pd_idx = (addr >> 21) & 0x1ff;
-        // page table
         auto const pt_idx = (addr >> 12) & 0x1ff;
 
-        // traverse hierarchy: allocate lower tables as needed
         auto* const pdp = get_next_table(long_mode_pml4, pml4_idx);
         auto* const pd = get_next_table(pdp, pdp_idx);
 
-        // check if 2MB page is possible
-        // safe to overwrite if entry is not present or is already a huge page
-        auto const entry = pd[pd_idx];
-        auto const is_free = !(entry & PAGE_P);
-        auto const is_huge = !is_free && (entry & PAGE_PS);
+        auto const pde = pd[pd_idx];
+        auto const is_pde_present = (pde & PAGE_P);
+        auto const is_huge = is_pde_present && (pde & PAGE_PS);
 
+        // check if 2MB mapping is possible and range is unmapped
         auto const can_use_2mb = (addr & (PAGE_2M - 1)) == 0 &&
-                                 (addr + PAGE_2M <= end) &&
-                                 (is_free || is_huge);
+                                 (addr + PAGE_2M <= end) && !is_pde_present;
 
         if (can_use_2mb) {
             pd[pd_idx] = addr | flags | PAGE_PS;
@@ -239,15 +234,24 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
             continue;
         }
 
+        // panic if attempting to map over an existing 2MB page
         if (is_huge) {
             serial::print("error: range already mapped as 2MB\n");
             panic(0x00'ff'ff'00); // yellow
         }
 
-        // current entry is not a huge page
+        // traverse to 4KB page table
         auto* const pt = get_next_table(pd, pd_idx);
+
+        // panic if 4KB entry is already present
+        if (pt[pt_idx] & PAGE_P) {
+            serial::print("error: range already mapped as 4KB\n");
+            panic(0x00'88'88'88); // gray
+        }
+
         auto const entry_flags =
             (flags & USE_PAT_WC) ? (flags & ~USE_PAT_WC) | PAGE_PAT_4KB : flags;
+
         pt[pt_idx] = addr | entry_flags;
         addr += PAGE_4K;
     }
@@ -302,9 +306,6 @@ auto init_paging() -> void {
                 d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'2000) {
                 trampoline_memory_is_free = true;
             }
-        } else if (d->Type == EfiMemoryMappedIO) {
-            // generic hardware mmio regions
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, MMIO_FLAGS);
         }
     }
 
@@ -337,9 +338,6 @@ auto init_paging() -> void {
 
     // map the hpet timer
     map_range(uptr(hpet.address), 0x1000, MMIO_FLAGS);
-
-    // map the heap
-    map_range(heap_start, heap_size, RAM_FLAGS);
 
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
