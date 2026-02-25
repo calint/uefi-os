@@ -153,34 +153,34 @@ alignas(4096) u64 long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
-auto constexpr PAGE_P = (1ull << 0);
+auto constexpr PAGE_P = 1ull << 0;
 
 // read/write (r/w): 0 = read-only, 1 = read/write
-auto constexpr PAGE_RW = (1ull << 1);
+auto constexpr PAGE_RW = 1ull << 1;
 
 // page-level write-through (pwt): bit 0 of pat index
-auto constexpr PAGE_PWT = (1ull << 3);
+auto constexpr PAGE_PWT = 1ull << 3;
 
 // page-level cache disable (pcd): bit 1 of pat index
-auto constexpr PAGE_PCD = (1ull << 4);
+auto constexpr PAGE_PCD = 1ull << 4;
 
 // page size (ps): 1 in pde (level 2) indicates 2mb huge page
-auto constexpr PAGE_PS = (1ull << 7);
+auto constexpr PAGE_PS = 1ull << 7;
 
 // pat (page attribute table) bit locations
 // the pat bit is the "high bit" (bit 2) of the 3-bit pat index
 // its position changes based on the page size!
 
 // pat bit for 4KB ptes
-auto constexpr PAGE_PAT_4KB = (1ull << 7);
+auto constexpr PAGE_PAT_4KB = 1ull << 7;
 
 // pat bit for 2MB pdes
-auto constexpr PAGE_PAT_2MB = (1ull << 12);
+auto constexpr PAGE_PAT_2MB = 1ull << 12;
 
 // bit 12:
 // * for 2MB pages: hardware PAT bit
 // * for 4KB pages: software signal translated to PAGE_PAT_4KB
-auto constexpr USE_PAT_WC = (1ull << 12);
+auto constexpr USE_PAT_WC = 1ull << 12;
 
 // page table traversal
 // returns pointer to the next level in paging hierarchy
