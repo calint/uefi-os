@@ -2,24 +2,23 @@
 
 ## intention
 
-* experiment with uefi bootable image
+* minimalist uefi bootable kernel
 * render graphics on screen
 * keyboard
 * timer
-* tasks
+* main core schedules jobs executed by remaining cores
 
 ## scope
 
 * x86-64 only
 * uefi gop required
 * acpi 2.0+
-* modern pc firmware
+* assumes compliant modern firmware and hardware
 * no legacy bios
-* no broken firmware or hardware tolerance
-* keyboard must be present and follow protocol
-* hardware assumed to have more than 1 thread
-* real-time system with all memory allocated up-front
-* program assumed correct and exceptions should reboot
+* ps/2 keyboard required
+* requires more than 1 logical processor
+* all memory allocated up-front
+* correctness assumed; exceptions reboot the system
 
 ## coding convention (opinionated)
 
