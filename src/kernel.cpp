@@ -13,7 +13,6 @@ using namespace kernel;
 namespace {
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
-//       make sure top of stack is 16 bytes aligned
 alignas(16) static u8 kernel_stack[4096];
 
 // serial (uart) init
