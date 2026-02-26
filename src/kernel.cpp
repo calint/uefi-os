@@ -160,9 +160,6 @@ auto constexpr PAGE_P = 1ull << 0;
 // read/write (r/w): 0 = read-only, 1 = read/write
 auto constexpr PAGE_RW = 1ull << 1;
 
-// page-level write-through (pwt): bit 0 of pat index
-auto constexpr PAGE_PWT = 1ull << 3;
-
 // page-level cache disable (pcd): bit 1 of pat index
 auto constexpr PAGE_PCD = 1ull << 4;
 
@@ -356,7 +353,7 @@ auto init_paging() -> void {
 
     // pat entry 4 occupies bits 32–39 (low byte of high dword)
     // clear pat4 then set to 0x01 (wc)
-    // note: with wc, cpu writes into burst transactions, avoiding per-write
+    // note: wc batches cpu writes into burst transactions, avoiding per-write
     //       pcie overhead
     high = (high & ~0xffu) | 1;
 
