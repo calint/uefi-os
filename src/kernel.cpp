@@ -15,7 +15,7 @@ namespace {
 auto constexpr PAGE_4K = 0x1000ull;
 
 // note: stack must be 16 byte aligned and top of stack sets RSP
-alignas(16) static u8 kernel_stack[PAGE_4K];
+alignas(16) u8 kernel_stack[PAGE_4K];
 
 // serial (uart) init
 auto inline init_serial() -> void {
@@ -111,7 +111,7 @@ auto constexpr PAGE_2M = 0x20'0000ull;
 // heap (bump allocator) init
 // finds the largest contiguous usable memory chunk and aligns to page
 // boundaries
-auto init_heap() -> void {
+auto inline init_heap() -> void {
     auto aligned_start = 0ull;
     auto aligned_size = 0ull;
     auto max_size = 0ull;
@@ -151,7 +151,7 @@ auto init_heap() -> void {
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(PAGE_4K) u64 static long_mode_pml4[512];
+alignas(PAGE_4K) u64 long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
@@ -607,7 +607,7 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 // flag used by ap to message bsp that ap has started when started sequentially
-auto static run_core_started_flag = false;
+auto run_core_started_flag = false;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
@@ -762,15 +762,15 @@ auto inline init_cores() -> void {
         config->task = uptr(run_core);
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
-        // the core sets flag to 1 once it has started
-        run_core_started_flag = 0;
+        // the core sets flag to true once it has started
+        run_core_started_flag = false;
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
 
         // wait for core to start
         // (2) paired with release (1)
-        while (atomic::load(&run_core_started_flag, atomic::ACQUIRE) == 0) {
+        while (!atomic::load(&run_core_started_flag, atomic::ACQUIRE)) {
             core::pause();
         }
     }
