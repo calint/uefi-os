@@ -23,7 +23,7 @@ auto inline init_serial() -> void {
     outb(0x3f8 + 3, 0x80);
 
     // dll/dlm (divisor latch low/high): set baud rate 115200 baud
-    // note: divisor is 115200 / target baud = 1
+    // note: divisor = 1843200 / (16 * baud) = 1
     outb(0x3f8 + 0, 1);
     outb(0x3f8 + 1, 0);
 
@@ -124,8 +124,7 @@ auto make_heap() -> Heap {
             uptr(desc), i * memory_map.descriptor_size);
 
         if (d->Type == EfiConventionalMemory ||
-            d->Type == EfiBootServicesCode || d->Type == EfiBootServicesData ||
-            d->Type == EfiPersistentMemory) {
+            d->Type == EfiBootServicesCode || d->Type == EfiBootServicesData) {
 
             auto const chunk_start = d->PhysicalStart;
             auto const chunk_end = chunk_start + (d->NumberOfPages * 4096);
@@ -262,10 +261,6 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
 
 // maps uefi memory, sets pat, and activates cr3
 auto init_paging() -> void {
-    // preserve heap metadata before allocating page tables
-    auto const heap_start = uptr(heap.start);
-    auto const heap_size = heap.size;
-
     // flag that is true after scanning memory if trampoline and protected mode
     // pages are in free memory
     auto trampoline_memory_is_free = false;
@@ -307,8 +302,9 @@ auto init_paging() -> void {
             // (kernel is there) and acpi nvs (hardware needs it)
             auto const is_free = d->Type == EfiConventionalMemory ||
                                  d->Type == EfiBootServicesCode ||
-                                 d->Type == EfiBootServicesData ||
-                                 d->Type == EfiPersistentMemory;
+                                 d->Type == EfiBootServicesData;
+            // note: EfiPersistentMemory excluded: non-volatile, not suitable as
+            //       heap
 
             if (is_free) {
                 free_mem_B += size;
@@ -360,7 +356,8 @@ auto init_paging() -> void {
 
     // pat entry 4 occupies bits 32–39 (low byte of high dword)
     // clear pat4 then set to 0x01 (wc)
-    // note: wc is essential for framebuffers; it buffers writes to the gpu
+    // note: with wc, cpu writes into burst transactions, avoiding per-write
+    //       pcie overhead
     high = (high & ~0xffu) | 1;
 
     // wrmsr: write edx:eax back to ia32_pat
@@ -535,7 +532,7 @@ auto inline init_idt_bsp() -> void {
     // p : present
     // dpl: ring 0
     // type: 64-bit interrupt gate (clears IF on entry, preventing nesting)
-    // 8: second entry in the gdt (code)
+    // selector 0x08: second entry in the gdt, 64-bit code descriptor
     auto const apic_addr = u64(kernel_asm_timer_handler);
     idt[TIMER_VECTOR] = {u16(apic_addr),       8, 0, 0x8e, u16(apic_addr >> 16),
                          u32(apic_addr >> 32), 0};
@@ -711,7 +708,7 @@ auto inline init_cores() {
     //
     // note: address range is checked to be available as conventional memory in
     //       `init_paging` and after cores have launched the memory can be
-    //       reclaimed
+    //       overwritten
 
     // the pages used in trampoline to transition from real -> protected -> long
     auto* const protected_mode_pdpt = ptr<u64>(0x1'0000);
