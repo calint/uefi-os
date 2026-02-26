@@ -204,11 +204,6 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
     auto addr = phys & ~(PAGE_4K - 1);
     auto const end = (phys + size + PAGE_4K - 1) & ~(PAGE_4K - 1);
 
-    // serial::print_hex(phys);
-    // serial::print(" ");
-    // serial::print_hex(size);
-    // serial::print("\n");
-
     while (addr < end) {
         auto const pml4_idx = (addr >> 39) & 0x1ff;
         auto const pdp_idx = (addr >> 30) & 0x1ff;
