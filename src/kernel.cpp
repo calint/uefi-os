@@ -12,8 +12,10 @@ using namespace kernel;
 
 namespace {
 
+auto constexpr PAGE_4K = 0x1000ull;
+
 // note: stack must be 16 byte aligned and top of stack sets RSP
-alignas(16) static u8 kernel_stack[4096];
+alignas(16) static u8 kernel_stack[PAGE_4K];
 
 // serial (uart) init
 auto inline init_serial() -> void {
@@ -35,14 +37,14 @@ auto inline init_serial() -> void {
 // assumes cpu supports sse + avx + xsave
 auto inline init_fpu() -> void {
     // cr0: control register 0
-    u64 cr0;
+    auto cr0 = 0ull;
     asm volatile("mov %%cr0, %0" : "=r"(cr0));
     cr0 &= ~(1ull << 2); // clear em: disable x87 emulation
     cr0 |= (1ull << 1);  // set mp: monitor coprocessor (task switching)
     asm volatile("mov %0, %%cr0" : : "r"(cr0));
 
     // cr4: control register 4
-    u64 cr4;
+    auto cr4 = 0ull;
     asm volatile("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= (1ull << 9);  // set osfxsr: enable fxsave/fxrstor
     cr4 |= (1ull << 10); // set osxmmexcpt: enable simd exceptions (#xm)
@@ -54,8 +56,8 @@ auto inline init_fpu() -> void {
     //     0 x87    standard fpu state
     //     1 sse    xmm registers
     //     2 avx    ymm registers (upper 128 bits)
-    u32 const eax = (1 << 0) | (1 << 1) | (1 << 2);
-    u32 const edx = 0;
+    auto const eax = (1u << 0) | (1u << 1) | (1u << 2);
+    auto const edx = 0u;
     asm volatile("xsetbv" : : "a"(eax), "d"(edx), "c"(0));
 
     // mxcsr: control/status register for sse
@@ -69,7 +71,7 @@ auto inline init_fpu() -> void {
     // note: enabling daz (bit 6) and ftz (bit 15) prevents massive performance
     //       penalties from microcode assists when handling subnormal numbers
     // masks (bits 7-12) are set to 1 (0x1f80) to prevent exceptions
-    auto const mxcsr = 0x1f80u | (1u << 6u) | (1u << 15u);
+    auto const mxcsr = 0x1f80u | (1u << 6) | (1u << 15);
     asm volatile("ldmxcsr %0" ::"m"(mxcsr));
 }
 
@@ -104,7 +106,6 @@ auto inline init_gdt() -> void {
                  : "rax", "memory");
 }
 
-auto constexpr PAGE_4K = 0x1000ull;
 auto constexpr PAGE_2M = 0x20'0000ull;
 
 // heap (bump allocator) init
@@ -126,7 +127,7 @@ auto init_heap() -> void {
             d->Type == EfiBootServicesCode || d->Type == EfiBootServicesData) {
 
             auto const chunk_start = d->PhysicalStart;
-            auto const chunk_end = chunk_start + (d->NumberOfPages * 4096);
+            auto const chunk_end = chunk_start + (d->NumberOfPages * PAGE_4K);
 
             // align start up; align end down; ensures heap is within physical
             // bounds
@@ -150,7 +151,7 @@ auto init_heap() -> void {
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
-alignas(4096) u64 long_mode_pml4[512];
+alignas(PAGE_4K) u64 static long_mode_pml4[512];
 
 // page table entry (pte) / page directory entry (pde) bits
 // present (p): must be 1 to be a valid entry
@@ -284,7 +285,7 @@ auto init_paging() -> void {
             d->Type == EfiPersistentMemory;
 
         if (is_ram) {
-            auto const size = d->NumberOfPages * 4096;
+            auto const size = d->NumberOfPages * PAGE_4K;
 
             map_range(d->PhysicalStart, size, RAM_FLAGS);
             total_mem_B += size;
@@ -342,7 +343,8 @@ auto init_paging() -> void {
     // config pat: set pa4 to write-combining (0x01)
     // msr 0x277: ia32_pat register
     // rdmsr: read 64-bit model specific register into edx:eax
-    u32 low, high;
+    auto low = 0u;
+    auto high = 0u;
     asm volatile("rdmsr" : "=a"(low), "=d"(high) : "c"(0x277));
 
     // pat entry 4 occupies bits 32–39 (low byte of high dword)
@@ -366,8 +368,8 @@ auto tsc_ticks_per_sec = 0ull;
 
 // reads the 64-bit time stamp counter (tsc)
 auto inline read_tsc() -> u64 {
-    u32 low;
-    u32 high;
+    auto low = 0u;
+    auto high = 0u;
     asm volatile("rdtsc" : "=a"(low), "=d"(high));
     return (u64(high) << 32) | low;
 }
@@ -605,14 +607,14 @@ extern "C" auto kernel_on_timer() -> void {
 }
 
 // flag used by ap to message bsp that ap has started when started sequentially
-u8 static run_core_started_flag;
+auto static run_core_started_flag = false;
 
 // this is the entry point for application processors
 // each core lands here after the trampoline finishes
 [[noreturn]] auto run_core() -> void {
     // flag bsp that core is running
     // (1) paired with acquire (2)
-    atomic::store(&run_core_started_flag, u8(1), atomic::RELEASE);
+    atomic::store(&run_core_started_flag, true, atomic::RELEASE);
 
     init_fpu();
     init_gdt();
@@ -691,7 +693,7 @@ extern "C" u8 kernel_asm_run_core_config[];
 
 auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 
-auto inline init_cores() {
+auto inline init_cores() -> void {
 
     // critical addresses:
     // 0x0'8000 - ?       : start core trampoline code
@@ -705,8 +707,8 @@ auto inline init_cores() {
     auto* const protected_mode_pdpt = ptr<u64>(0x1'0000);
     auto* const protected_mode_pd = ptr<u64>(0x1'1000);
 
-    memset(protected_mode_pdpt, 0, 4096);
-    memset(protected_mode_pd, 0, 4096);
+    memset(protected_mode_pdpt, 0, PAGE_4K);
+    memset(protected_mode_pd, 0, PAGE_4K);
 
     // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'2000
     protected_mode_pdpt[0] = 0x1'1000 | PAGE_P;
@@ -742,7 +744,7 @@ auto inline init_cores() {
         // allocate a unique stack for this specific core
         auto const stack = allocate_pages(config::CORE_STACK_SIZE_PAGES);
         auto const stack_top =
-            uptr(stack) + config::CORE_STACK_SIZE_PAGES * 4096;
+            uptr(stack) + config::CORE_STACK_SIZE_PAGES * PAGE_4K;
 
         // define struct
         struct [[gnu::packed]] TrampolineConfig {
@@ -780,7 +782,7 @@ namespace kernel {
 
 // bump allocator returning zeroed 4KB pages
 auto allocate_pages(u64 const num_pages) -> void* {
-    auto const bytes = num_pages * 4096;
+    auto const bytes = num_pages * PAGE_4K;
 
     // ensure heap has enough space for the requested allocation
     if (heap.size < bytes) {
