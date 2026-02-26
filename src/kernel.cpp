@@ -832,4 +832,4 @@ auto allocate_pages(u64 const num_pages) -> void* {
 }
 
 // required by msvc/clang abi when floating-point arithmetic is used
-extern "C" i32 _fltused = 0;
+extern "C" auto _fltused = 0;
