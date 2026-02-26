@@ -303,7 +303,7 @@ auto init_paging() -> void {
                 auto const start = d->PhysicalStart;
                 auto const end = start + size;
                 auto const range_start = start > 0x8000 ? start : 0x8000;
-                auto const range_end = end < 0x1'2000 ? end : 0x1'2000;
+                auto const range_end = end < 0xa000 ? end : 0xa000;
 
                 if (range_end > range_start) {
                     trampoline_pages_found +=
@@ -325,7 +325,7 @@ auto init_paging() -> void {
     serial::print_dec((total_mem_B - free_mem_B) / 1024);
     serial::print(" KB\n");
 
-    if (trampoline_pages_found < (0x1'2000 - 0x8000) / PAGE_4K) {
+    if (trampoline_pages_found < (0xa000 - 0x8000) / PAGE_4K) {
         serial::print("abort: memory used by trampoline not free\n");
         panic(0x00'00'00'ff); // blue
     }
@@ -699,22 +699,21 @@ auto constexpr TRAMPOLINE_DEST = uptr(0x8000);
 auto inline init_cores() -> void {
 
     // critical addresses:
-    // 0x0'8000 - ?       : start core trampoline code
-    // 0x1'0000 - 0x1'1fff: start core pdpt for protected mode code
+    // 0x8000 - 0xa000: trampoline code and pdpt for protected mode code
     //
     // note: address range is checked to be available as conventional memory in
     //       `init_paging` and after cores have launched the memory can be
     //       overwritten
 
     // the pages used in trampoline to transition from real -> protected -> long
-    auto* const protected_mode_pdpt = ptr<u64>(0x1'0000);
-    auto* const protected_mode_pd = ptr<u64>(0x1'1000);
+    auto* const protected_mode_pdpt = ptr<u64>(0x9000);
+    auto* const protected_mode_pd = ptr<u64>(0xa000);
 
     memset(protected_mode_pdpt, 0, PAGE_4K);
     memset(protected_mode_pd, 0, PAGE_4K);
 
     // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'2000
-    protected_mode_pdpt[0] = 0x1'1000 | PAGE_P;
+    protected_mode_pdpt[0] = 0xa000 | PAGE_P;
     protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
     // note: page tables are in wb cacheable ram
