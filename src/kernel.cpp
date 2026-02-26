@@ -803,8 +803,6 @@ auto allocate_pages(u64 const num_pages) -> void* {
 } // namespace kernel
 
 [[noreturn]] auto kernel::start() -> void {
-    serial::print("kernel::start\n");
-
     init_serial();
     serial::print("serial initiated\n");
 
