@@ -110,7 +110,7 @@ auto constexpr PAGE_2M = 0x20'0000ull;
 // heap (bump allocator) init
 // finds the largest contiguous usable memory chunk and aligns to page
 // boundaries
-auto make_heap() -> Heap {
+auto init_heap() -> void {
     auto aligned_start = 0ull;
     auto aligned_size = 0ull;
     auto max_size = 0ull;
@@ -146,7 +146,7 @@ auto make_heap() -> Heap {
     }
 
     // note: assumes heap was found
-    return {ptr<void>(aligned_start), aligned_size};
+    heap = {ptr<void>(aligned_start), aligned_size};
 }
 
 // the top-level PML4 (512GB/entry) potentially covering 256 TB
@@ -803,16 +803,19 @@ auto allocate_pages(u64 const num_pages) -> void* {
 } // namespace kernel
 
 [[noreturn]] auto kernel::start() -> void {
+    serial::print("kernel::start\n");
+
     init_serial();
     serial::print("serial initiated\n");
-
-    heap = make_heap();
 
     serial::print("init_fpu\n");
     init_fpu();
 
     serial::print("init_gdt\n");
     init_gdt();
+
+    serial::print("init_heap\n");
+    init_heap();
 
     serial::print("init_paging\n");
     init_paging();
