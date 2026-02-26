@@ -457,7 +457,7 @@ auto io_apic_write(u32 const reg, u32 const val) -> void {
     apic.io[0x000 / 4] = reg;
 
     // iowin (offset 0x10): write the 32-bit data to the selected register
-    apic.io[0x010 / 4] = val; // write value
+    apic.io[0x010 / 4] = val;
 }
 
 auto constexpr KEYBOARD_VECTOR = 33u;
@@ -574,7 +574,7 @@ extern "C" auto kernel_on_keyboard() -> void {
         serial::print_hex_byte(scancode);
         serial::print("|");
 
-        // notify the os layer that a keyboard event has occured
+        // notify the os layer that a keyboard event has occurred
         osca::on_keyboard(scancode);
     }
 
