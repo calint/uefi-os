@@ -123,7 +123,10 @@ auto make_heap() -> Heap {
         auto const* const d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             uptr(desc), i * memory_map.descriptor_size);
 
-        if (d->Type == EfiConventionalMemory) {
+        if (d->Type == EfiConventionalMemory ||
+            d->Type == EfiBootServicesCode || d->Type == EfiBootServicesData ||
+            d->Type == EfiPersistentMemory) {
+
             auto const chunk_start = d->PhysicalStart;
             auto const chunk_end = chunk_start + (d->NumberOfPages * 4096);
 
@@ -284,27 +287,37 @@ auto init_paging() -> void {
         auto const* const d = ptr_offset<EFI_MEMORY_DESCRIPTOR>(
             desc, i * memory_map.descriptor_size);
 
-        if (d->Type == EfiACPIReclaimMemory || d->Type == EfiACPIMemoryNVS) {
-            // acpi tables: must be mapped to parse hardware config later
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-            total_mem_B += d->NumberOfPages * 4096;
-        } else if (d->Type == EfiLoaderCode || d->Type == EfiLoaderData ||
-                   d->Type == EfiBootServicesCode ||
-                   d->Type == EfiBootServicesData) {
-            // kernel binary + current uefi stack
-            // note: EfiBootServiceCode and Data is mapped because current stack
-            //       is there for now
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-            total_mem_B += d->NumberOfPages * 4096;
-        } else if (d->Type == EfiConventionalMemory) {
-            // general purpose ram
-            map_range(d->PhysicalStart, d->NumberOfPages * 4096, RAM_FLAGS);
-            total_mem_B += d->NumberOfPages * 4096;
-            free_mem_B += d->NumberOfPages * 4096;
-            // check if range covers the trampoline and page table ram
-            if (d->PhysicalStart <= 0x8000 &&
-                d->PhysicalStart + d->NumberOfPages * 4096 >= 0x1'2000) {
-                trampoline_memory_is_free = true;
+        // memory that must be mapped to access ram/tables
+        auto const is_ram =
+            d->Type == EfiConventionalMemory || d->Type == EfiLoaderCode ||
+            d->Type == EfiLoaderData || d->Type == EfiBootServicesCode ||
+            d->Type == EfiBootServicesData ||
+            d->Type == EfiRuntimeServicesCode ||
+            d->Type == EfiRuntimeServicesData ||
+            d->Type == EfiACPIReclaimMemory || d->Type == EfiACPIMemoryNVS ||
+            d->Type == EfiPersistentMemory;
+
+        if (is_ram) {
+            auto const size = d->NumberOfPages * 4096;
+
+            map_range(d->PhysicalStart, size, RAM_FLAGS);
+            total_mem_B += size;
+
+            // memory that is actually free to use for the heap exclude loader
+            // (kernel is there) and acpi nvs (hardware needs it)
+            auto const is_free = d->Type == EfiConventionalMemory ||
+                                 d->Type == EfiBootServicesCode ||
+                                 d->Type == EfiBootServicesData ||
+                                 d->Type == EfiPersistentMemory;
+
+            if (is_free) {
+                free_mem_B += size;
+
+                // check for trampoline area (0x8000 to 0x1'2000)
+                if (d->PhysicalStart <= 0x8000 &&
+                    (d->PhysicalStart + size) >= 0x12000) {
+                    trampoline_memory_is_free = true;
+                }
             }
         }
     }
