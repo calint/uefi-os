@@ -253,9 +253,7 @@ auto inline map_range(uptr const phys, u64 const size, u64 const flags)
 
 // maps uefi memory, sets pat, and activates cr3
 auto init_paging() -> void {
-    // flag that is true after scanning memory if trampoline and protected mode
-    // pages are in free memory
-    auto trampoline_memory_is_free = false;
+    auto trampoline_pages_found = 0u;
 
     // page attribute flags
     // p: present; rw: read/write
@@ -301,10 +299,15 @@ auto init_paging() -> void {
             if (is_free) {
                 free_mem_B += size;
 
-                // check for trampoline area (0x8000 to 0x1'2000)
-                if (d->PhysicalStart <= 0x8000 &&
-                    (d->PhysicalStart + size) >= 0x12000) {
-                    trampoline_memory_is_free = true;
+                // check trampoline pages found
+                auto const start = d->PhysicalStart;
+                auto const end = start + size;
+                auto const range_start = start > 0x8000 ? start : 0x8000;
+                auto const range_end = end < 0x1'2000 ? end : 0x1'2000;
+
+                if (range_end > range_start) {
+                    trampoline_pages_found +=
+                        (range_end - range_start) / PAGE_4K;
                 }
             }
         }
@@ -322,7 +325,7 @@ auto init_paging() -> void {
     serial::print_dec((total_mem_B - free_mem_B) / 1024);
     serial::print(" KB\n");
 
-    if (!trampoline_memory_is_free) {
+    if (trampoline_pages_found < (0x1'2000 - 0x8000) / PAGE_4K) {
         serial::print("abort: memory used by trampoline not free\n");
         panic(0x00'00'00'ff); // blue
     }
@@ -733,10 +736,11 @@ auto inline init_cores() -> void {
     // calculate the offset of the config data relative to the start
     auto const config_offset = uptr(kernel_asm_run_core_config) - start_addr;
 
+    auto const bsp_id = apic.local[0x020 / 4] >> 24;
+
     for (auto i = 0u; i < core_count; ++i) {
         // skip the bsp (the core currently running this code)
         // usually the bsp has apic id 0, but check specifically
-        auto const bsp_id = apic.local[0x020 / 4] >> 24;
         if (cores[i].apic_id == bsp_id) {
             continue;
         }
