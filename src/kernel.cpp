@@ -609,7 +609,7 @@ extern "C" auto kernel_on_timer() -> void {
     __builtin_unreachable();
 }
 
-// flag used by ap to message bsp that ap has started when started sequentially
+// sequential ap startup; flag reused per core bring-up
 auto run_core_started_flag = false;
 
 // this is the entry point for application processors
@@ -765,7 +765,7 @@ auto inline init_cores() -> void {
         config->task = uptr(run_core);
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
-        // the core sets flag to true once it has started
+        // relaxed: flag is polled only after sipi, no prior data depends on it
         atomic::store(&run_core_started_flag, false, atomic::RELAXED);
 
         // send the init-sipi-sipi sequence via the apic to start the core
