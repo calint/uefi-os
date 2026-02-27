@@ -766,7 +766,7 @@ auto inline init_cores() -> void {
         config->long_mode_pml4 = uptr(long_mode_pml4);
 
         // the core sets flag to true once it has started
-        run_core_started_flag = false;
+        atomic::store(&run_core_started_flag, false, atomic::RELAXED);
 
         // send the init-sipi-sipi sequence via the apic to start the core
         send_init_sipi(cores[i].apic_id, TRAMPOLINE_DEST);
