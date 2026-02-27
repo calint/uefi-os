@@ -712,7 +712,7 @@ auto inline init_cores() -> void {
     memset(protected_mode_pdpt, 0, PAGE_4K);
     memset(protected_mode_pd, 0, PAGE_4K);
 
-    // identity map the first 2MB covering 0x8000, 0x1'0000 -> 0x1'2000
+    // identity map the first 2MB covering 0x8000 -> 0xb000
     protected_mode_pdpt[0] = 0xa000 | PAGE_P;
     protected_mode_pd[0] = 0 | PAGE_P | PAGE_RW | PAGE_PS;
 
