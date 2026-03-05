@@ -241,7 +241,7 @@ class Printer {
     }
 
   public:
-    Printer(kernel::FrameBuffer fb) : fb_{fb} {}
+    explicit Printer(kernel::FrameBuffer fb) : fb_{fb} {}
 
     auto position(u32 const col, u32 const row) -> Printer& {
         row_ = row;
@@ -336,7 +336,7 @@ auto static space_pressed = 0u;
     auto alt_color = 0xc0'c0'c0'c0u;
     auto color = main_color;
 
-    Printer pr = {kernel::frame_buffer};
+    auto pr = Printer(kernel::frame_buffer);
 
     pr.scale(2).color(0x00'ff'ff'00).position(1u, 2u);
     pr.p("osca x64").nl();
@@ -483,7 +483,7 @@ auto static space_pressed = 0u;
 
         jobs.wait_idle();
 
-        Printer p{fb};
+        auto p = Printer(fb);
         p.position(1, 1).scale(2);
         p.p("cores: ")
             .p(kernel::core_count)
